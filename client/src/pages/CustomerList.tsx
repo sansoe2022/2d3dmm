@@ -60,6 +60,11 @@ export default function CustomerList() {
   const [paymentType, setPaymentType] = useState<'cash' | 'credit'>('cash');
   const [weeklySettle, setWeeklySettle] = useState(false);
   const [bettingType, setBettingType] = useState<'2D' | '3D'>('2D');
+  const [formDate, setFormDate] = useState(new Date().toISOString().split('T')[0]);
+  const [formSession, setFormSession] = useState<'morning' | 'evening'>(() => {
+    const h = new Date().getHours();
+    return h < 12 ? 'morning' : 'evening';
+  });
 
   useEffect(() => {
     loadCustomers();
@@ -79,6 +84,8 @@ export default function CustomerList() {
     setWeeklySettle(false);
     setBettingType('2D');
     setEditingCustomer(null);
+    setFormDate(new Date().toISOString().split('T')[0]);
+    setFormSession(new Date().getHours() < 12 ? 'morning' : 'evening');
   };
 
   const handleAddCustomer = () => {
@@ -101,7 +108,7 @@ export default function CustomerList() {
 
       // Use current time
       const now = new Date();
-      const customerDate = new Date(displayDate);
+      const customerDate = new Date(formDate);
       customerDate.setHours(now.getHours(), now.getMinutes(), 0);
 
       const customer: CustomerRecord = {
@@ -112,14 +119,15 @@ export default function CustomerList() {
         weeklySettle: paymentType === 'credit' ? weeklySettle : false,
         bettingType,
         date: customerDate,
-        session: displaySession,
+        session: formSession,
         totalBet: parsed.totalAmount,
       };
 
       if (editingCustomer) {
-        updateCustomerInSession(customer.id, customer, sessionKey);
+        const editSessionKey = getSessionKey(customerDate, formSession);
+        updateCustomerInSession(customer.id, customer, editSessionKey);
       } else {
-        addCustomer(customer, customerDate, displaySession);
+        addCustomer(customer, customerDate, formSession);
       }
       enqueueSnackbar(editingCustomer ? 'Customer updated' : 'Customer added', { variant: 'success' });
       resetForm();
@@ -145,6 +153,8 @@ export default function CustomerList() {
     setPaymentType(customer.paymentType);
     setWeeklySettle(customer.weeklySettle || false);
     setBettingType(customer.bettingType);
+    setFormDate(new Date(customer.date).toISOString().split('T')[0]);
+    setFormSession(customer.session);
     const bettingArray = Array.isArray(customer.bettingData)
       ? customer.bettingData
       : Object.values(customer.bettingData || {}).flat();
@@ -310,7 +320,8 @@ export default function CustomerList() {
                       </Typography>
                       <Typography variant="body2" color="textSecondary">
                         {new Date(customer.date).toLocaleDateString()} •{' '}
-                        {customer.session === 'morning' ? '🌅' : '🌙'}
+                        {new Date(customer.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} •{' '}
+                        {customer.session === 'morning' ? '🌅 မနက်' : '🌙 ညနေ'}
                       </Typography>
                     </Box>
                     <Stack direction="row" spacing={1}>
@@ -379,7 +390,27 @@ export default function CustomerList() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             sx={{ mb: 2 }}
+            autoFocus
           />
+          <TextField
+            fullWidth
+            type="date"
+            label={t('modal.date') || 'နေ့စွဲ'}
+            value={formDate}
+            onChange={(e) => setFormDate(e.target.value)}
+            sx={{ mb: 2 }}
+            InputLabelProps={{ shrink: true }}
+          />
+          <ToggleButtonGroup
+            value={formSession}
+            exclusive
+            onChange={(e, val) => val && setFormSession(val)}
+            size="small"
+            sx={{ mb: 2, width: '100%' }}
+          >
+            <ToggleButton value="morning" sx={{ flex: 1 }}>🌅 {t('modal.morning')}</ToggleButton>
+            <ToggleButton value="evening" sx={{ flex: 1 }}>🌙 {t('modal.evening')}</ToggleButton>
+          </ToggleButtonGroup>
 
           <FormControl fullWidth sx={{ mb: 2 }}>
             <InputLabel>{t('modal.bettingType')}</InputLabel>
