@@ -101,8 +101,18 @@ export default function CustomerList() {
       };
 
       if (editingCustomer) {
-        const editSessionKey = getSessionKey(customerDate, formSession);
-        updateCustomerInSession(customer.id, customer, editSessionKey);
+        // Get the original session key (where the customer currently lives)
+        const originalDate = new Date(editingCustomer.date);
+        const originalSessionKey = getSessionKey(originalDate, editingCustomer.session);
+        const newSessionKey = getSessionKey(customerDate, formSession);
+        if (originalSessionKey !== newSessionKey) {
+          // Date or session changed: delete from old, add to new
+          deleteCustomerFromSession(editingCustomer.id, originalSessionKey);
+          addCustomer(customer, customerDate, formSession);
+        } else {
+          // Same session: just update in place
+          updateCustomerInSession(customer.id, customer, newSessionKey);
+        }
         showToast('Customer updated', 'success');
       } else {
         addCustomer(customer, customerDate, formSession);
