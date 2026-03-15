@@ -1,153 +1,92 @@
 import React from 'react';
-import {
-  Container,
-  List,
-  ListItem,
-  ListItemIcon,
-  ListItemText,
-  Switch,
-  Divider,
-  Typography,
-  Box,
-  Card,
-  CardContent,
-} from '@mui/material';
+import { Moon, Sun, Globe, Info } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Brightness4, Language } from '@mui/icons-material';
 
 export default function SettingsPage() {
   const { isDarkMode, setIsDarkMode } = useTheme();
   const { language, setLanguage, t } = useLanguage();
 
   return (
-    <Container maxWidth="sm" sx={{ py: 3, pb: 12 }}>
-      <Typography variant="h5" component="h1" sx={{ mb: 1, fontWeight: 600 }}>
-        {t('settings.title')}
-      </Typography>
-      <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-        {t('settings.description')}
-      </Typography>
+    <>
+      {/* Page Header */}
+      <div className="page-header">
+        <h1 className="page-title">{t('settings.title')}</h1>
+        <p className="page-subtitle">{t('settings.description')}</p>
+      </div>
 
-      {/* Settings Card with List */}
-      <Card elevation={1} sx={{ borderRadius: '12px' }}>
-        <List sx={{ width: '100%' }}>
-          {/* Dark Theme Setting */}
-          <ListItem
-            secondaryAction={
-              <Switch
-                edge="end"
-                checked={isDarkMode}
-                onChange={(e) => setIsDarkMode(e.target.checked)}
-                color="primary"
-              />
-            }
-            sx={{
-              py: 2,
-              px: 2,
-              '&:hover': {
-                backgroundColor: 'rgba(0, 137, 123, 0.04)',
-              },
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 40 }}>
-              <Brightness4 color="primary" />
-            </ListItemIcon>
-            <ListItemText
-              primary={t('settings.darkTheme')}
-              primaryTypographyProps={{ variant: 'body1', fontWeight: 500 }}
-              secondary={isDarkMode ? 'On' : 'Off'}
-              secondaryTypographyProps={{ variant: 'caption' }}
+      {/* Settings Card */}
+      <div className="settings-card mb-4">
+        {/* Dark Mode */}
+        <div className="settings-item">
+          <div className="settings-icon">
+            {isDarkMode ? <Moon /> : <Sun />}
+          </div>
+          <div className="settings-info">
+            <div className="settings-info-title">{t('settings.darkTheme')}</div>
+            <div className="settings-info-sub">{isDarkMode ? 'On' : 'Off'}</div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={isDarkMode}
+              onChange={e => setIsDarkMode(e.target.checked)}
             />
-          </ListItem>
+            <span className="switch-track" />
+          </label>
+        </div>
 
-          <Divider variant="inset" component="li" sx={{ my: 0 }} />
-
-          {/* Language Setting */}
-          <ListItem
-            sx={{
-              py: 2,
-              px: 2,
-              '&:hover': {
-                backgroundColor: 'rgba(0, 137, 123, 0.04)',
-              },
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 40 }}>
-              <Language color="primary" />
-            </ListItemIcon>
-            <ListItemText
-              primary={t('settings.language')}
-              primaryTypographyProps={{ variant: 'body1', fontWeight: 500 }}
-              sx={{ mb: 1 }}
-            />
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Box
-                component="button"
-                onClick={() => setLanguage('my')}
-                sx={{
-                  px: 2,
-                  py: 0.75,
-                  borderRadius: '20px',
-                  border: language === 'my' ? '2px solid' : '1px solid',
-                  borderColor: language === 'my' ? 'primary.main' : 'divider',
-                  backgroundColor: language === 'my' ? 'primary.main' : 'transparent',
-                  color: language === 'my' ? 'primary.contrastText' : 'text.primary',
-                  fontWeight: 500,
-                  fontSize: '0.875rem',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    backgroundColor: language === 'my' ? 'primary.dark' : 'action.hover',
-                  },
-                }}
-              >
-                မြန်မာ
-              </Box>
-              <Box
-                component="button"
-                onClick={() => setLanguage('en')}
-                sx={{
-                  px: 2,
-                  py: 0.75,
-                  borderRadius: '20px',
-                  border: language === 'en' ? '2px solid' : '1px solid',
-                  borderColor: language === 'en' ? 'primary.main' : 'divider',
-                  backgroundColor: language === 'en' ? 'primary.main' : 'transparent',
-                  color: language === 'en' ? 'primary.contrastText' : 'text.primary',
-                  fontWeight: 500,
-                  fontSize: '0.875rem',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    backgroundColor: language === 'en' ? 'primary.dark' : 'action.hover',
-                  },
-                }}
-              >
-                English
-              </Box>
-            </Box>
-          </ListItem>
-        </List>
-      </Card>
+        {/* Language */}
+        <div className="settings-item">
+          <div className="settings-icon">
+            <Globe />
+          </div>
+          <div className="settings-info">
+            <div className="settings-info-title">{t('settings.language')}</div>
+            <div className="settings-info-sub">
+              {language === 'my' ? 'မြန်မာ' : 'English'}
+            </div>
+          </div>
+          <div className="lang-btns">
+            <button
+              className={`lang-btn${language === 'my' ? ' active' : ''}`}
+              onClick={() => setLanguage('my')}
+            >
+              မြန်မာ
+            </button>
+            <button
+              className={`lang-btn${language === 'en' ? ' active' : ''}`}
+              onClick={() => setLanguage('en')}
+            >
+              EN
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Info Card */}
-      <Card
-        elevation={0}
-        sx={{
-          mt: 3,
-          backgroundColor: 'action.hover',
-          borderRadius: '12px',
-          border: '1px solid',
-          borderColor: 'divider',
-        }}
-      >
-        <CardContent>
-          <Typography variant="caption" color="textSecondary">
-            {t('settings.description')}
-          </Typography>
-        </CardContent>
-      </Card>
-    </Container>
+      <div className="card">
+        <div className="card-body">
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: 'var(--info-bg)', color: 'var(--info)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <Info size={16} />
+            </div>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+                Myanmar 2D/3D Lottery Summarizer
+              </p>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                {t('settings.description')}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }

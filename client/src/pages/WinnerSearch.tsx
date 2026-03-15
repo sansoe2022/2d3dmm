@@ -1,45 +1,29 @@
+import React, { useState } from 'react';
 import {
-  Container,
-  Card,
-  CardContent,
-  Button,
-  Box,
-  Typography,
-  Stack,
-  Chip,
-  TextField,
-  ToggleButton,
-  ToggleButtonGroup,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-} from '@mui/material';
-import { Search } from '@mui/icons-material';
-import { useSnackbar } from 'notistack';
+  Search, Calendar, Sun, Moon, Trophy,
+  Banknote, CreditCard, Hash
+} from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useSession } from '../contexts/SessionContext';
+import { useToast } from '../contexts/ToastContext';
 import {
   getCustomersForSession,
   getSessionKey,
   type CustomerRecord,
 } from '../lib/customerManager';
 import { formatAmount } from '../lib/bettingParser';
-import { useState, useMemo } from 'react';
+import BottomSheet from '../components/BottomSheet';
 
 export default function WinnerSearch() {
   const { t } = useLanguage();
   const { date, session } = useSession();
-  const { enqueueSnackbar } = useSnackbar();
+  const { showToast } = useToast();
+
   const [winningNumber, setWinningNumber] = useState('');
   const [bettingType, setBettingType] = useState<'2D' | '3D'>('2D');
   const [winners, setWinners] = useState<Array<{ customer: CustomerRecord; amount: number }>>([]);
   const [searched, setSearched] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showDateSheet, setShowDateSheet] = useState(false);
   const [displayDate, setDisplayDate] = useState(date.toISOString().split('T')[0]);
   const [displaySession, setDisplaySession] = useState(session);
   const [pickerDate, setPickerDate] = useState(displayDate);
@@ -47,27 +31,27 @@ export default function WinnerSearch() {
 
   const handleSearch = () => {
     if (!winningNumber.trim()) {
-      enqueueSnackbar('Please enter a winning number', { variant: 'error' });
+      showToast('Please enter a winning number', 'error');
       return;
     }
 
     const numStr = winningNumber.trim();
-    const isValid = bettingType === '2D' 
-      ? /^\d{2}$/.test(numStr) 
+    const isValid = bettingType === '2D'
+      ? /^\d{2}$/.test(numStr)
       : /^\d{3}$/.test(numStr);
 
     if (!isValid) {
-      enqueueSnackbar(
-        bettingType === '2D' 
-          ? 'Please enter a valid 2D number (00-99)' 
+      showToast(
+        bettingType === '2D'
+          ? 'Please enter a valid 2D number (00-99)'
           : 'Please enter a valid 3D number (000-999)',
-        { variant: 'error' }
+        'error'
       );
       return;
     }
 
-    const sessionKey = getSessionKey(new Date(displayDate), displaySession);
-    const customers = getCustomersForSession(sessionKey);
+    const sk = getSessionKey(new Date(displayDate), displaySession);
+    const customers = getCustomersForSession(sk);
     const winnersList: Array<{ customer: CustomerRecord; amount: number }> = [];
 
     customers.forEach((customer) => {
@@ -77,7 +61,7 @@ export default function WinnerSearch() {
         ? customer.bettingData
         : Object.values(customer.bettingData || {}).flat();
 
-      const amount = bettingData
+      const amount = (bettingData as any[])
         .filter((entry: any) => entry.number === numStr)
         .reduce((sum: number, entry: any) => sum + entry.amount, 0);
 
@@ -90,220 +74,236 @@ export default function WinnerSearch() {
     setSearched(true);
 
     if (winnersList.length === 0) {
-      enqueueSnackbar('No winners found for this number', { variant: 'info' });
+      showToast('No winners found for this number', 'info');
     }
   };
 
   const handleDateSelect = () => {
     setDisplayDate(pickerDate);
     setDisplaySession(pickerSession);
-    setShowDatePicker(false);
+    setShowDateSheet(false);
+    setSearched(false);
+    setWinners([]);
   };
 
   const totalPayout = winners.reduce((sum, w) => sum + w.amount, 0);
   const cashWinners = winners.filter(w => w.customer.paymentType === 'cash').length;
 
-  const displayDateFormatted = new Date(displayDate).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
+  const displayDateFormatted = new Date(displayDate + 'T00:00:00').toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
   });
 
   return (
-    <Container maxWidth="md" sx={{ py: 4 }}>
-      {/* Header */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
-          {t('winners.title')}
-        </Typography>
-        <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-          {t('winners.description')}
-        </Typography>
+    <>
+      {/* Page Header */}
+      <div className="page-header">
+        <h1 className="page-title">{t('winners.title')}</h1>
+        <p className="page-subtitle">{t('winners.description')}</p>
+      </div>
 
-        {/* Inline Date + Session Selector */}
-        <Card elevation={1} sx={{ p: 2, mb: 3, backgroundColor: 'action.hover' }}>
-          <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-            <Button
-              variant="text"
-              onClick={() => setShowDatePicker(true)}
-              sx={{
-                fontSize: '1rem',
-                fontWeight: 600,
-                color: 'primary.main',
-                textTransform: 'none',
-                '&:hover': { backgroundColor: 'action.hover' },
-              }}
-            >
-              📅 {displayDateFormatted}
-            </Button>
-            <ToggleButtonGroup
-              value={displaySession}
-              exclusive
-              onChange={(e, newSession) => newSession && setDisplaySession(newSession)}
-              size="small"
-            >
-              <ToggleButton value="morning">🌅 {t('modal.morning')}</ToggleButton>
-              <ToggleButton value="evening">🌙 {t('modal.evening')}</ToggleButton>
-            </ToggleButtonGroup>
-          </Stack>
-        </Card>
-      </Box>
+      {/* Date Bar */}
+      <div className="date-bar">
+        <button className="date-btn" onClick={() => {
+          setPickerDate(displayDate);
+          setPickerSession(displaySession);
+          setShowDateSheet(true);
+        }}>
+          <Calendar size={15} />
+          {displayDateFormatted}
+        </button>
+        <div className="toggle-group">
+          <button
+            className={`toggle-btn${displaySession === 'morning' ? ' active' : ''}`}
+            onClick={() => { setDisplaySession('morning'); setSearched(false); }}
+          >
+            <Sun size={13} />
+            {t('modal.morning')}
+          </button>
+          <button
+            className={`toggle-btn${displaySession === 'evening' ? ' active' : ''}`}
+            onClick={() => { setDisplaySession('evening'); setSearched(false); }}
+          >
+            <Moon size={13} />
+            {t('modal.evening')}
+          </button>
+        </div>
+      </div>
 
-      {/* Search Section */}
-      <Card elevation={1} sx={{ mb: 4, p: 3 }}>
-        <Stack spacing={2}>
-          {/* 2D/3D Toggle */}
-          <Box>
-            <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>
-              {t('modal.bettingType')}
-            </Typography>
-            <ToggleButtonGroup
-              value={bettingType}
-              exclusive
-              onChange={(e, newType) => newType && setBettingType(newType)}
-              fullWidth
-            >
-              <ToggleButton value="2D">2D (00-99)</ToggleButton>
-              <ToggleButton value="3D">3D (000-999)</ToggleButton>
-            </ToggleButtonGroup>
-          </Box>
+      {/* Search Card */}
+      <div className="card mb-4">
+        <div className="card-body-lg">
+          {/* 2D / 3D Toggle */}
+          <div className="form-group">
+            <label className="form-label">{t('modal.bettingType')}</label>
+            <div className="toggle-group">
+              <button
+                className={`toggle-btn${bettingType === '2D' ? ' active' : ''}`}
+                onClick={() => { setBettingType('2D'); setSearched(false); setWinningNumber(''); }}
+              >
+                2D (00–99)
+              </button>
+              <button
+                className={`toggle-btn${bettingType === '3D' ? ' active' : ''}`}
+                onClick={() => { setBettingType('3D'); setSearched(false); setWinningNumber(''); }}
+              >
+                3D (000–999)
+              </button>
+            </div>
+          </div>
 
           {/* Number Input */}
-          <TextField
-            fullWidth
-            label={t('winners.winningNumber')}
-            value={winningNumber}
-            onChange={(e) => setWinningNumber(e.target.value)}
-            placeholder={bettingType === '2D' ? '00-99' : '000-999'}
-            onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-          />
+          <div className="form-group">
+            <label className="form-label">{t('winners.winningNumber')}</label>
+            <div className="search-box">
+              <Hash size={18} />
+              <input
+                className="form-input"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={bettingType === '2D' ? 2 : 3}
+                value={winningNumber}
+                onChange={e => setWinningNumber(e.target.value.replace(/\D/g, ''))}
+                placeholder={bettingType === '2D' ? '00–99' : '000–999'}
+                onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                style={{ paddingLeft: '40px' }}
+              />
+            </div>
+          </div>
 
           {/* Search Button */}
-          <Button
-            variant="contained"
-            startIcon={<Search />}
+          <button
+            className="btn btn-primary btn-full btn-lg"
             onClick={handleSearch}
-            fullWidth
-            size="large"
           >
+            <Search size={18} />
             {t('winners.search')}
-          </Button>
-        </Stack>
-      </Card>
+          </button>
+        </div>
+      </div>
 
       {/* Results */}
       {searched && (
         <>
-          {/* Stats Cards */}
+          {/* Stats */}
           {winners.length > 0 && (
-            <Stack direction="row" spacing={2} sx={{ mb: 4 }}>
-              <Card elevation={1} sx={{ flex: 1 }}>
-                <CardContent sx={{ textAlign: 'center', py: 2 }}>
-                  <Typography color="textSecondary" variant="body2">
-                    {t('winners.totalWinners')}
-                  </Typography>
-                  <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main' }}>
-                    {winners.length}
-                  </Typography>
-                </CardContent>
-              </Card>
-              <Card elevation={1} sx={{ flex: 1 }}>
-                <CardContent sx={{ textAlign: 'center', py: 2 }}>
-                  <Typography color="textSecondary" variant="body2">
-                    {t('winners.cashWinners')}
-                  </Typography>
-                  <Typography variant="h5" sx={{ fontWeight: 700, color: 'success.main' }}>
-                    {cashWinners}
-                  </Typography>
-                </CardContent>
-              </Card>
-              <Card elevation={1} sx={{ flex: 1 }}>
-                <CardContent sx={{ textAlign: 'center', py: 2 }}>
-                  <Typography color="textSecondary" variant="body2">
-                    {t('winners.totalPayout')}
-                  </Typography>
-                  <Typography variant="h5" sx={{ fontWeight: 700, color: 'warning.main' }}>
-                    {formatAmount(totalPayout)}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Stack>
+            <div className="stats-grid mb-4" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
+              <div className="stat-card">
+                <div className="stat-label">{t('winners.totalWinners')}</div>
+                <div className="stat-value">{winners.length}</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">{t('winners.cashWinners')}</div>
+                <div className="stat-value success">{cashWinners}</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">{t('winners.totalPayout')}</div>
+                <div className="stat-value warning" style={{ fontSize: '16px' }}>
+                  {formatAmount(totalPayout)}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Winners List */}
           {winners.length === 0 ? (
-            <Card elevation={1} sx={{ textAlign: 'center', py: 6 }}>
-              <Typography variant="body1" color="textSecondary" sx={{ mb: 1 }}>
-                {t('winners.noWinners')}
-              </Typography>
-              <Typography variant="body2" color="textSecondary">
-                {t('winners.tryAnother')}
-              </Typography>
-            </Card>
+            <div className="empty-state">
+              <div className="empty-state-icon">
+                <Trophy />
+              </div>
+              <h3>{t('winners.noWinners')}</h3>
+              <p>Try a different number or date</p>
+            </div>
           ) : (
-            <Stack spacing={2}>
+            <div>
+              <p className="section-heading">
+                {winners.length} winner{winners.length !== 1 ? 's' : ''} for #{winningNumber}
+              </p>
               {winners.map((winner, idx) => (
-                <Card key={idx} elevation={1}>
-                  <CardContent>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-                      <Box>
-                        <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                          {winner.customer.name}
-                        </Typography>
-                        <Typography variant="body2" color="textSecondary">
-                          {winner.customer.session === 'morning' ? '🌅 Morning' : '🌙 Evening'}
-                        </Typography>
-                      </Box>
-                      <Chip
-                        label={winner.customer.paymentType === 'cash' ? '💵 Cash' : '📋 Credit'}
-                        color={winner.customer.paymentType === 'cash' ? 'success' : 'warning'}
-                        variant="filled"
-                      />
-                    </Stack>
-
-                    <Box sx={{ backgroundColor: 'action.hover', p: 2, borderRadius: 1 }}>
-                      <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                        Bet on {winningNumber}: <strong>{formatAmount(winner.amount)}</strong>
-                      </Typography>
-                    </Box>
-                  </CardContent>
-                </Card>
+                <div key={idx} className="winner-card">
+                  <div className="winner-card-header">
+                    <div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {winner.customer.name}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                        <span className={`badge badge-${winner.customer.bettingType === '2D' ? 'accent' : 'info'}`}>
+                          <Hash size={9} />
+                          {winner.customer.bettingType}
+                        </span>
+                        {winner.customer.paymentType === 'cash' ? (
+                          <span className="badge badge-success">
+                            <Banknote size={9} />
+                            {t('modal.cash')}
+                          </span>
+                        ) : (
+                          <span className="badge badge-warning">
+                            <CreditCard size={9} />
+                            {t('modal.credit')}
+                          </span>
+                        )}
+                        <span className="badge badge-muted">
+                          {winner.customer.session === 'morning' ? <Sun size={9} /> : <Moon size={9} />}
+                          {winner.customer.session === 'morning' ? t('modal.morning') : t('modal.evening')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="winner-payout">
+                    Bet on <strong>#{winningNumber}</strong>: <strong>{formatAmount(winner.amount)}</strong>
+                  </div>
+                </div>
               ))}
-            </Stack>
+            </div>
           )}
         </>
       )}
 
-      {/* Date Picker Dialog */}
-      <Dialog open={showDatePicker} onClose={() => setShowDatePicker(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Select Date & Session</DialogTitle>
-        <DialogContent sx={{ pt: 2 }}>
-          <TextField
-            fullWidth
+      {/* Date Picker Bottom Sheet */}
+      <BottomSheet
+        open={showDateSheet}
+        onClose={() => setShowDateSheet(false)}
+        title={t('winners.searchByDate')}
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setShowDateSheet(false)}>
+              {t('modal.cancel')}
+            </button>
+            <button className="btn btn-primary" onClick={handleDateSelect}>
+              {t('winners.search')}
+            </button>
+          </>
+        }
+      >
+        <div className="form-group">
+          <label className="form-label">{t('modal.date')}</label>
+          <input
+            className="form-input"
             type="date"
             value={pickerDate}
-            onChange={(e) => setPickerDate(e.target.value)}
-            sx={{ mb: 2 }}
+            onChange={e => setPickerDate(e.target.value)}
           />
-          <FormControl fullWidth>
-            <InputLabel>{t('modal.session')}</InputLabel>
-            <Select
-              value={pickerSession}
-              label={t('modal.session')}
-              onChange={(e) => setPickerSession(e.target.value as 'morning' | 'evening')}
+        </div>
+        <div className="form-group">
+          <label className="form-label">{t('modal.session')}</label>
+          <div className="toggle-group">
+            <button
+              className={`toggle-btn${pickerSession === 'morning' ? ' active' : ''}`}
+              onClick={() => setPickerSession('morning')}
             >
-              <MenuItem value="morning">🌅 {t('modal.morning')}</MenuItem>
-              <MenuItem value="evening">🌙 {t('modal.evening')}</MenuItem>
-            </Select>
-          </FormControl>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowDatePicker(false)}>{t('modal.cancel')}</Button>
-          <Button variant="contained" onClick={handleDateSelect}>
-            {t('winners.search')}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Container>
+              <Sun size={13} />
+              {t('modal.morning')}
+            </button>
+            <button
+              className={`toggle-btn${pickerSession === 'evening' ? ' active' : ''}`}
+              onClick={() => setPickerSession('evening')}
+            >
+              <Moon size={13} />
+              {t('modal.evening')}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
+    </>
   );
 }

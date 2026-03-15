@@ -1,5 +1,4 @@
 import React, { ReactNode } from 'react';
-import { Box, Typography, Button, Container } from '@mui/material';
 
 interface Props {
   children: ReactNode;
@@ -27,22 +26,47 @@ export default class ErrorBoundary extends React.Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <Container maxWidth="sm" sx={{ py: 8 }}>
-          <Box sx={{ textAlign: 'center' }}>
-            <Typography variant="h4" sx={{ mb: 2 }}>
-              Something went wrong
-            </Typography>
-            <Typography variant="body1" color="textSecondary" sx={{ mb: 4 }}>
-              {this.state.error?.message}
-            </Typography>
-            <Button
-              variant="contained"
-              onClick={() => window.location.reload()}
-            >
-              Reload Page
-            </Button>
-          </Box>
-        </Container>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '100vh',
+          padding: '24px',
+          textAlign: 'center',
+          fontFamily: 'Inter, sans-serif',
+        }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: '50%',
+            background: '#FEF2F2', color: '#DC2626',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 28, marginBottom: 20,
+          }}>
+            ⚠
+          </div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, color: '#111827' }}>
+            Something went wrong
+          </h2>
+          <p style={{ fontSize: 14, color: '#6B7280', marginBottom: 24 }}>
+            {this.state.error?.message}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              padding: '10px 24px',
+              background: '#4F46E5',
+              color: 'white',
+              border: 'none',
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Reload Page
+          </button>
+        </div>
       );
     }
 

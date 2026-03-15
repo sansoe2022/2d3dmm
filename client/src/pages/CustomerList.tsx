@@ -1,33 +1,11 @@
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Container,
-  Card,
-  CardContent,
-  CardHeader,
-  Button,
-  Box,
-  Grid,
-  Typography,
-  Stack,
-  Chip,
-  IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  FormControlLabel,
-  Checkbox,
-  ToggleButton,
-  ToggleButtonGroup,
-} from '@mui/material';
-import { Add, Delete, Edit } from '@mui/icons-material';
-import { useSnackbar } from 'notistack';
+  Plus, Edit2, Trash2, Calendar, Sun, Moon, Users,
+  Banknote, CreditCard, RefreshCw, ChevronRight, Hash
+} from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useSession } from '../contexts/SessionContext';
+import { useToast } from '../contexts/ToastContext';
 import {
   getCustomersForSession,
   deleteCustomerFromSession,
@@ -37,23 +15,26 @@ import {
   type CustomerRecord,
 } from '../lib/customerManager';
 import { formatAmount, parseBettingText } from '../lib/bettingParser';
-import { useState, useEffect, useMemo } from 'react';
+import BottomSheet from '../components/BottomSheet';
 
 export default function CustomerList() {
   const { t } = useLanguage();
   const { date, session, sessionKey } = useSession();
-  const { enqueueSnackbar } = useSnackbar();
+  const { showToast } = useToast();
+
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showAddSheet, setShowAddSheet] = useState(false);
+  const [showDateSheet, setShowDateSheet] = useState(false);
+  const [showDeleteSheet, setShowDeleteSheet] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<CustomerRecord | null>(null);
-  
+
   // Date and session state
   const [displayDate, setDisplayDate] = useState(date.toISOString().split('T')[0]);
   const [displaySession, setDisplaySession] = useState(session);
   const [pickerDate, setPickerDate] = useState(displayDate);
   const [pickerSession, setPickerSession] = useState(displaySession);
-  
+
   // Form state
   const [name, setName] = useState('');
   const [bettingData, setBettingData] = useState('');
@@ -61,18 +42,16 @@ export default function CustomerList() {
   const [weeklySettle, setWeeklySettle] = useState(false);
   const [bettingType, setBettingType] = useState<'2D' | '3D'>('2D');
   const [formDate, setFormDate] = useState(new Date().toISOString().split('T')[0]);
-  const [formSession, setFormSession] = useState<'morning' | 'evening'>(() => {
-    const h = new Date().getHours();
-    return h < 12 ? 'morning' : 'evening';
-  });
+  const [formSession, setFormSession] = useState<'morning' | 'evening'>(() =>
+    new Date().getHours() < 12 ? 'morning' : 'evening'
+  );
 
   useEffect(() => {
     loadCustomers();
   }, [displayDate, displaySession]);
 
   const loadCustomers = () => {
-    const dateStr = displayDate;
-    const dateObj = new Date(dateStr);
+    const dateObj = new Date(displayDate);
     const loaded = getCustomersForSession(getSessionKey(dateObj, displaySession));
     setCustomers(loaded);
   };
@@ -88,25 +67,23 @@ export default function CustomerList() {
     setFormSession(new Date().getHours() < 12 ? 'morning' : 'evening');
   };
 
-  const handleAddCustomer = () => {
+  const handleSaveCustomer = () => {
     if (!name.trim()) {
-      enqueueSnackbar(t('modal.customerName') + ' required', { variant: 'error' });
+      showToast(t('modal.customerName') + ' required', 'error');
       return;
     }
-
     if (!bettingData.trim()) {
-      enqueueSnackbar(t('modal.bettingData') + ' required', { variant: 'error' });
+      showToast(t('modal.bettingData') + ' required', 'error');
       return;
     }
 
     try {
       const parsed = parseBettingText(bettingData, bettingType);
       if (parsed.entries.length === 0) {
-        enqueueSnackbar('No valid bets found', { variant: 'error' });
+        showToast('No valid bets found', 'error');
         return;
       }
 
-      // Use current time
       const now = new Date();
       const customerDate = new Date(formDate);
       customerDate.setHours(now.getHours(), now.getMinutes(), 0);
@@ -126,25 +103,34 @@ export default function CustomerList() {
       if (editingCustomer) {
         const editSessionKey = getSessionKey(customerDate, formSession);
         updateCustomerInSession(customer.id, customer, editSessionKey);
+        showToast('Customer updated', 'success');
       } else {
         addCustomer(customer, customerDate, formSession);
+        showToast('Customer added', 'success');
       }
-      enqueueSnackbar(editingCustomer ? 'Customer updated' : 'Customer added', { variant: 'success' });
+
       resetForm();
-      setShowAddModal(false);
+      setShowAddSheet(false);
       loadCustomers();
-    } catch (error) {
-      enqueueSnackbar('Error parsing betting data', { variant: 'error' });
+    } catch {
+      showToast('Error parsing betting data', 'error');
     }
   };
 
-  const handleDeleteCustomer = (customerId: string) => {
-    if (window.confirm('Are you sure you want to delete this customer?')) {
-      if (deleteCustomerFromSession(customerId, sessionKey)) {
-        enqueueSnackbar('Customer deleted', { variant: 'success' });
-        loadCustomers();
-      }
+  const openDeleteSheet = (customerId: string) => {
+    setDeletingId(customerId);
+    setShowDeleteSheet(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deletingId) return;
+    const currentSessionKey = getSessionKey(new Date(displayDate), displaySession);
+    if (deleteCustomerFromSession(deletingId, currentSessionKey)) {
+      showToast('Customer deleted', 'success');
+      loadCustomers();
     }
+    setDeletingId(null);
+    setShowDeleteSheet(false);
   };
 
   const handleEditCustomer = (customer: CustomerRecord) => {
@@ -158,19 +144,16 @@ export default function CustomerList() {
     const bettingArray = Array.isArray(customer.bettingData)
       ? customer.bettingData
       : Object.values(customer.bettingData || {}).flat();
-    setBettingData(
-      bettingArray.map((b: any) => `${b.number} ${b.amount}`).join('\n')
-    );
-    setShowAddModal(true);
+    setBettingData(bettingArray.map((b: any) => `${b.number} ${b.amount}`).join('\n'));
+    setShowAddSheet(true);
   };
 
   const handleDateSelect = () => {
     setDisplayDate(pickerDate);
     setDisplaySession(pickerSession);
-    setShowDatePicker(false);
+    setShowDateSheet(false);
   };
 
-  // Calculate stats
   const stats = useMemo(() => {
     const cash = customers.filter(c => c.paymentType === 'cash').length;
     const credit = customers.filter(c => c.paymentType === 'credit').length;
@@ -178,317 +161,384 @@ export default function CustomerList() {
     return { cash, credit, total };
   }, [customers]);
 
-  const totalBets = stats.total;
-  const cashCount = stats.cash;
-  const creditCount = stats.credit;
-
-  const displayDateFormatted = new Date(displayDate).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
+  const displayDateFormatted = new Date(displayDate + 'T00:00:00').toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
   });
 
-  return (
-    <Container maxWidth="md" sx={{ py: 4 }}>
-      {/* Header */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
-          {t('customers.title')}
-        </Typography>
-        <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-          {t('customers.description')}
-        </Typography>
+  const bettingPlaceholder = bettingType === '2D'
+    ? '12 500\n34 1000R\n56 300\n78 200R'
+    : '123 500\n456 1000R\n789 300';
 
-        {/* Inline Date + Session Selector */}
-        <Card elevation={1} sx={{ p: 2, mb: 3, backgroundColor: 'action.hover' }}>
-          <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-            <Button
-              variant="text"
-              onClick={() => setShowDatePicker(true)}
-              sx={{
-                fontSize: '1rem',
-                fontWeight: 600,
-                color: 'primary.main',
-                textTransform: 'none',
-                '&:hover': { backgroundColor: 'action.hover' },
-              }}
-            >
-              📅 {displayDateFormatted}
-            </Button>
-            <ToggleButtonGroup
-              value={displaySession}
-              exclusive
-              onChange={(e, newSession) => newSession && setDisplaySession(newSession)}
-              size="small"
-            >
-              <ToggleButton value="morning">🌅 {t('modal.morning')}</ToggleButton>
-              <ToggleButton value="evening">🌙 {t('modal.evening')}</ToggleButton>
-            </ToggleButtonGroup>
-          </Stack>
-        </Card>
-      </Box>
+  const deletingCustomer = customers.find(c => c.id === deletingId);
+
+  return (
+    <>
+      {/* Page Header */}
+      <div className="page-header">
+        <h1 className="page-title">{t('customers.title')}</h1>
+        <p className="page-subtitle">{t('customers.description')}</p>
+      </div>
+
+      {/* Date Bar */}
+      <div className="date-bar">
+        <button className="date-btn" onClick={() => {
+          setPickerDate(displayDate);
+          setPickerSession(displaySession);
+          setShowDateSheet(true);
+        }}>
+          <Calendar size={15} />
+          {displayDateFormatted}
+        </button>
+        <div className="toggle-group">
+          <button
+            className={`toggle-btn${displaySession === 'morning' ? ' active' : ''}`}
+            onClick={() => setDisplaySession('morning')}
+          >
+            <Sun size={13} />
+            {t('modal.morning')}
+          </button>
+          <button
+            className={`toggle-btn${displaySession === 'evening' ? ' active' : ''}`}
+            onClick={() => setDisplaySession('evening')}
+          >
+            <Moon size={13} />
+            {t('modal.evening')}
+          </button>
+        </div>
+      </div>
 
       {/* Stats Grid */}
-      <Grid container spacing={2} sx={{ mb: 4 }}>
-        <Grid size={{ xs: 6 }}>
-          <Card elevation={1}>
-            <CardContent sx={{ textAlign: 'center', py: 2 }}>
-              <Typography color="textSecondary" variant="body2">
-                {t('customers.totalCustomers')}
-              </Typography>
-              <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main' }}>
-                {customers.length}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 6 }}>
-          <Card elevation={1}>
-            <CardContent sx={{ textAlign: 'center', py: 2 }}>
-              <Typography color="textSecondary" variant="body2">
-                {t('customers.totalBets')}
-              </Typography>
-              <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main' }}>
-                {formatAmount(totalBets)}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 6 }}>
-          <Card elevation={1}>
-            <CardContent sx={{ textAlign: 'center', py: 2 }}>
-              <Typography color="textSecondary" variant="body2">
-                {t('customers.cash')}
-              </Typography>
-              <Typography variant="h5" sx={{ fontWeight: 700, color: 'success.main' }}>
-                {cashCount}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 6 }}>
-          <Card elevation={1}>
-            <CardContent sx={{ textAlign: 'center', py: 2 }}>
-              <Typography color="textSecondary" variant="body2">
-                {t('customers.credit')}
-              </Typography>
-              <Typography variant="h5" sx={{ fontWeight: 700, color: 'warning.main' }}>
-                {creditCount}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-label">{t('customers.totalCustomers')}</div>
+          <div className="stat-value">{customers.length}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">{t('customers.totalBets')}</div>
+          <div className="stat-value" style={{ fontSize: customers.length > 0 ? '18px' : '22px' }}>
+            {formatAmount(stats.total)}
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">{t('customers.cash')}</div>
+          <div className="stat-value success">{stats.cash}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">{t('customers.credit')}</div>
+          <div className="stat-value warning">{stats.credit}</div>
+        </div>
+      </div>
 
-      {/* Add New Customer Button */}
-      <Button
-        variant="contained"
-        startIcon={<Add />}
-        onClick={() => {
-          resetForm();
-          setShowAddModal(true);
-        }}
-        fullWidth
-        sx={{ mb: 4 }}
+      {/* Add Button */}
+      <button
+        className="btn btn-primary btn-full btn-lg mb-4"
+        onClick={() => { resetForm(); setShowAddSheet(true); }}
       >
+        <Plus size={18} />
         {t('customers.addNew')}
-      </Button>
+      </button>
 
       {/* Customer List */}
       {customers.length === 0 ? (
-        <Card elevation={1} sx={{ textAlign: 'center', py: 6 }}>
-          <Typography variant="body1" color="textSecondary" sx={{ mb: 1 }}>
-            {t('customers.noCust')}
-          </Typography>
-          <Typography variant="body2" color="textSecondary">
-            {t('customers.addFirst')}
-          </Typography>
-        </Card>
+        <div className="empty-state">
+          <div className="empty-state-icon">
+            <Users />
+          </div>
+          <h3>{t('customers.noCust')}</h3>
+          <p>{t('customers.addFirst')}</p>
+        </div>
       ) : (
-        <Stack spacing={2}>
+        <div>
           {customers.map((customer) => {
-            const bettingData = Array.isArray(customer.bettingData)
+            const bettingArray = Array.isArray(customer.bettingData)
               ? customer.bettingData
               : Object.values(customer.bettingData || {}).flat();
+
             return (
-              <Card key={customer.id} elevation={1}>
-                <CardContent>
-                  <Stack direction="row" justifyContent="space-between" alignItems="start" sx={{ mb: 2 }}>
-                    <Box>
-                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                        {customer.name}
-                      </Typography>
-                      <Typography variant="body2" color="textSecondary">
-                        {new Date(customer.date).toLocaleDateString()} •{' '}
-                        {new Date(customer.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })} •{' '}
-                        {customer.session === 'morning' ? '🌅 မနက်' : '🌙 ညနေ'}
-                      </Typography>
-                    </Box>
-                    <Stack direction="row" spacing={1}>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleEditCustomer(customer)}
-                        color="primary"
-                      >
-                        <Edit fontSize="small" />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleDeleteCustomer(customer.id)}
-                        color="error"
-                      >
-                        <Delete fontSize="small" />
-                      </IconButton>
-                    </Stack>
-                  </Stack>
+              <div key={customer.id} className="customer-card">
+                <div className="customer-card-header">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="customer-name">{customer.name}</div>
+                    <div className="customer-meta">
+                      <span className={`badge badge-${customer.bettingType === '2D' ? 'accent' : 'info'}`}>
+                        <Hash size={9} />
+                        {customer.bettingType}
+                      </span>
+                      {customer.paymentType === 'cash' ? (
+                        <span className="badge badge-success">
+                          <Banknote size={9} />
+                          {t('modal.cash')}
+                        </span>
+                      ) : (
+                        <span className="badge badge-warning">
+                          <CreditCard size={9} />
+                          {t('modal.credit')}
+                        </span>
+                      )}
+                      {customer.weeklySettle && (
+                        <span className="badge badge-muted">
+                          <RefreshCw size={9} />
+                          {t('modal.weeklyClear')}
+                        </span>
+                      )}
+                      <span className="badge badge-muted">
+                        {customer.session === 'morning' ? <Sun size={9} /> : <Moon size={9} />}
+                        {customer.session === 'morning' ? t('modal.morning') : t('modal.evening')}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="customer-card-actions">
+                    <button
+                      className="btn-icon"
+                      onClick={() => handleEditCustomer(customer)}
+                      aria-label="Edit"
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                    <button
+                      className="btn-icon"
+                      onClick={() => openDeleteSheet(customer.id)}
+                      aria-label="Delete"
+                      style={{ color: 'var(--danger)' }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
 
-                  <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap' }}>
-                    <Chip label={customer.bettingType} size="small" variant="outlined" />
-                    <Chip
-                      label={customer.paymentType === 'cash' ? '💵 Cash' : '📋 Credit'}
-                      size="small"
-                      color={customer.paymentType === 'cash' ? 'success' : 'warning'}
-                      variant="filled"
-                    />
-                    {customer.weeklySettle && (
-                      <Chip label="Weekly Clear" size="small" variant="outlined" />
+                <div className="customer-card-body">
+                  <div className="bet-entries">
+                    {(bettingArray as any[]).slice(0, 12).map((bet: any, idx: number) => (
+                      <span key={idx} className="bet-entry">
+                        {bet.number}: {formatAmount(bet.amount)}
+                      </span>
+                    ))}
+                    {bettingArray.length > 12 && (
+                      <span className="bet-entry" style={{ color: 'var(--text-muted)' }}>
+                        +{bettingArray.length - 12} more
+                      </span>
                     )}
-                  </Stack>
-
-                  <Box sx={{ backgroundColor: 'action.hover', p: 1.5, borderRadius: 1 }}>
-                    <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
-                      {bettingData.map((bet: any, idx: number) => (
-                        <Chip
-                          key={idx}
-                          label={`${bet.number}: ${formatAmount(bet.amount)}`}
-                          size="small"
-                          variant="outlined"
-                        />
-                      ))}
-                    </Stack>
-                  </Box>
-
-                  <Typography variant="body2" sx={{ mt: 2, fontWeight: 600 }}>
-                    Total: {formatAmount(customer.totalBet)}
-                  </Typography>
-                </CardContent>
-              </Card>
+                  </div>
+                  <div className="bet-total">
+                    <span className="text-secondary text-sm">Total</span>
+                    <span className="bet-total-amount">{formatAmount(customer.totalBet)}</span>
+                  </div>
+                </div>
+              </div>
             );
           })}
-        </Stack>
+        </div>
       )}
 
-      {/* Add/Edit Customer Modal */}
-      <Dialog open={showAddModal} onClose={() => setShowAddModal(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {editingCustomer ? t('modal.editCustomer') : t('modal.addCustomer')}
-        </DialogTitle>
-        <DialogContent sx={{ pt: 2, maxHeight: '70vh', overflow: 'auto' }}>
-          <TextField
-            fullWidth
-            label={t('modal.customerName')}
+      {/* ── Add / Edit Customer Bottom Sheet ── */}
+      <BottomSheet
+        open={showAddSheet}
+        onClose={() => { setShowAddSheet(false); resetForm(); }}
+        title={editingCustomer ? t('modal.editCustomer') : t('modal.addCustomer')}
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => { setShowAddSheet(false); resetForm(); }}>
+              {t('modal.cancel')}
+            </button>
+            <button className="btn btn-primary" onClick={handleSaveCustomer}>
+              {editingCustomer ? t('modal.updateButton') : t('modal.addButton')}
+            </button>
+          </>
+        }
+      >
+        {/* Name */}
+        <div className="form-group">
+          <label className="form-label">{t('modal.customerName')}</label>
+          <input
+            className="form-input"
+            type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            sx={{ mb: 2 }}
+            onChange={e => setName(e.target.value)}
+            placeholder="e.g. Ko Aung"
             autoFocus
           />
-          <TextField
-            fullWidth
+        </div>
+
+        {/* Date */}
+        <div className="form-group">
+          <label className="form-label">{t('modal.date')}</label>
+          <input
+            className="form-input"
             type="date"
-            label={t('modal.date') || 'နေ့စွဲ'}
             value={formDate}
-            onChange={(e) => setFormDate(e.target.value)}
-            sx={{ mb: 2 }}
-            InputLabelProps={{ shrink: true }}
+            onChange={e => setFormDate(e.target.value)}
           />
-          <ToggleButtonGroup
-            value={formSession}
-            exclusive
-            onChange={(e, val) => val && setFormSession(val)}
-            size="small"
-            sx={{ mb: 2, width: '100%' }}
-          >
-            <ToggleButton value="morning" sx={{ flex: 1 }}>🌅 {t('modal.morning')}</ToggleButton>
-            <ToggleButton value="evening" sx={{ flex: 1 }}>🌙 {t('modal.evening')}</ToggleButton>
-          </ToggleButtonGroup>
+        </div>
 
-          <FormControl fullWidth sx={{ mb: 2 }}>
-            <InputLabel>{t('modal.bettingType')}</InputLabel>
-            <Select value={bettingType} label={t('modal.bettingType')} onChange={(e) => setBettingType(e.target.value as '2D' | '3D')}>
-              <MenuItem value="2D">2D</MenuItem>
-              <MenuItem value="3D">3D</MenuItem>
-            </Select>
-          </FormControl>
-
-          <TextField
-            fullWidth
-            label={t('modal.bettingData')}
-            value={bettingData}
-            onChange={(e) => setBettingData(e.target.value)}
-            multiline
-            rows={4}
-            sx={{ mb: 2 }}
-            placeholder="12 500&#10;34 1000 ks&#10;56 300R"
-          />
-
-          <FormControl fullWidth sx={{ mb: 2 }}>
-            <InputLabel>{t('modal.paymentType')}</InputLabel>
-            <Select
-              value={paymentType}
-              label={t('modal.paymentType')}
-              onChange={(e) => setPaymentType(e.target.value as 'cash' | 'credit')}
+        {/* Session */}
+        <div className="form-group">
+          <label className="form-label">{t('modal.session')}</label>
+          <div className="toggle-group">
+            <button
+              className={`toggle-btn${formSession === 'morning' ? ' active' : ''}`}
+              onClick={() => setFormSession('morning')}
             >
-              <MenuItem value="cash">💵 Cash</MenuItem>
-              <MenuItem value="credit">📋 Credit</MenuItem>
-            </Select>
-          </FormControl>
+              <Sun size={13} />
+              {t('modal.morning')}
+            </button>
+            <button
+              className={`toggle-btn${formSession === 'evening' ? ' active' : ''}`}
+              onClick={() => setFormSession('evening')}
+            >
+              <Moon size={13} />
+              {t('modal.evening')}
+            </button>
+          </div>
+        </div>
 
-          {paymentType === 'credit' && (
-            <FormControlLabel
-              control={<Checkbox checked={weeklySettle} onChange={(e) => setWeeklySettle(e.target.checked)} />}
-              label={t('modal.weeklyClear')}
-              sx={{ mb: 2 }}
-            />
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowAddModal(false)}>{t('modal.cancel')}</Button>
-          <Button variant="contained" onClick={handleAddCustomer}>
-            {editingCustomer ? t('modal.updateButton') : t('modal.addButton')}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        {/* Betting Type */}
+        <div className="form-group">
+          <label className="form-label">{t('modal.bettingType')}</label>
+          <div className="toggle-group">
+            <button
+              className={`toggle-btn${bettingType === '2D' ? ' active' : ''}`}
+              onClick={() => setBettingType('2D')}
+            >
+              2D
+            </button>
+            <button
+              className={`toggle-btn${bettingType === '3D' ? ' active' : ''}`}
+              onClick={() => setBettingType('3D')}
+            >
+              3D
+            </button>
+          </div>
+        </div>
 
-      {/* Date Picker Dialog */}
-      <Dialog open={showDatePicker} onClose={() => setShowDatePicker(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Select Date & Session</DialogTitle>
-        <DialogContent sx={{ pt: 2 }}>
-          <TextField
-            fullWidth
+        {/* Betting Data */}
+        <div className="form-group">
+          <label className="form-label">{t('modal.bettingData')}</label>
+          <textarea
+            className="form-textarea"
+            value={bettingData}
+            onChange={e => setBettingData(e.target.value)}
+            placeholder={bettingPlaceholder}
+            rows={5}
+          />
+        </div>
+
+        {/* Payment Type */}
+        <div className="form-group">
+          <label className="form-label">{t('modal.paymentType')}</label>
+          <div className="toggle-group">
+            <button
+              className={`toggle-btn${paymentType === 'cash' ? ' active' : ''}`}
+              onClick={() => setPaymentType('cash')}
+            >
+              <Banknote size={13} />
+              {t('modal.cash')}
+            </button>
+            <button
+              className={`toggle-btn${paymentType === 'credit' ? ' active' : ''}`}
+              onClick={() => setPaymentType('credit')}
+            >
+              <CreditCard size={13} />
+              {t('modal.credit')}
+            </button>
+          </div>
+        </div>
+
+        {/* Weekly Settle (credit only) */}
+        {paymentType === 'credit' && (
+          <div className="form-group">
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                className="checkbox-input"
+                checked={weeklySettle}
+                onChange={e => setWeeklySettle(e.target.checked)}
+                id="weekly-settle"
+              />
+              <span className="checkbox-label">{t('modal.weeklyClear')}</span>
+            </label>
+          </div>
+        )}
+      </BottomSheet>
+
+      {/* ── Date Picker Bottom Sheet ── */}
+      <BottomSheet
+        open={showDateSheet}
+        onClose={() => setShowDateSheet(false)}
+        title={t('modal.searchByDate')}
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setShowDateSheet(false)}>
+              {t('modal.cancel')}
+            </button>
+            <button className="btn btn-primary" onClick={handleDateSelect}>
+              {t('winners.search')}
+            </button>
+          </>
+        }
+      >
+        <div className="form-group">
+          <label className="form-label">{t('modal.date')}</label>
+          <input
+            className="form-input"
             type="date"
             value={pickerDate}
-            onChange={(e) => setPickerDate(e.target.value)}
-            sx={{ mb: 2 }}
+            onChange={e => setPickerDate(e.target.value)}
           />
-          <FormControl fullWidth>
-            <InputLabel>{t('modal.session')}</InputLabel>
-            <Select
-              value={pickerSession}
-              label={t('modal.session')}
-              onChange={(e) => setPickerSession(e.target.value as 'morning' | 'evening')}
+        </div>
+        <div className="form-group">
+          <label className="form-label">{t('modal.session')}</label>
+          <div className="toggle-group">
+            <button
+              className={`toggle-btn${pickerSession === 'morning' ? ' active' : ''}`}
+              onClick={() => setPickerSession('morning')}
             >
-              <MenuItem value="morning">🌅 {t('modal.morning')}</MenuItem>
-              <MenuItem value="evening">🌙 {t('modal.evening')}</MenuItem>
-            </Select>
-          </FormControl>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowDatePicker(false)}>{t('modal.cancel')}</Button>
-          <Button variant="contained" onClick={handleDateSelect}>
-            {t('winners.search')}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Container>
+              <Sun size={13} />
+              {t('modal.morning')}
+            </button>
+            <button
+              className={`toggle-btn${pickerSession === 'evening' ? ' active' : ''}`}
+              onClick={() => setPickerSession('evening')}
+            >
+              <Moon size={13} />
+              {t('modal.evening')}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
+
+      {/* ── Delete Confirmation Bottom Sheet ── */}
+      <BottomSheet
+        open={showDeleteSheet}
+        onClose={() => setShowDeleteSheet(false)}
+        title="Delete Customer"
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setShowDeleteSheet(false)}>
+              {t('modal.cancel')}
+            </button>
+            <button className="btn btn-danger" onClick={handleConfirmDelete}>
+              Delete
+            </button>
+          </>
+        }
+      >
+        <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: '50%',
+            background: 'var(--danger-bg)', color: 'var(--danger)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 16px',
+          }}>
+            <Trash2 size={24} />
+          </div>
+          <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
+            Delete {deletingCustomer?.name || 'this customer'}?
+          </p>
+          <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
+            This action cannot be undone. All betting data will be permanently removed.
+          </p>
+        </div>
+      </BottomSheet>
+    </>
   );
 }

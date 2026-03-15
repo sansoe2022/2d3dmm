@@ -3,11 +3,12 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { SessionProvider } from './contexts/SessionContext';
-import { SnackbarProvider } from 'notistack';
+import { ToastProvider } from './contexts/ToastContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import MainLayout from './components/MainLayout';
 import CustomerList from './pages/CustomerList';
 import WinnerSearch from './pages/WinnerSearch';
+import SettingsPage from './pages/SettingsPage';
 
 function App() {
   return (
@@ -15,17 +16,18 @@ function App() {
       <ThemeProvider>
         <LanguageProvider>
           <SessionProvider>
-            <SnackbarProvider maxSnack={3} autoHideDuration={3000}>
+            <ToastProvider>
               <BrowserRouter>
                 <Routes>
                   <Route element={<MainLayout />}>
                     <Route path="/" element={<CustomerList />} />
                     <Route path="/customers" element={<CustomerList />} />
                     <Route path="/winners" element={<WinnerSearch />} />
+                    <Route path="/settings" element={<SettingsPage />} />
                   </Route>
                 </Routes>
               </BrowserRouter>
-            </SnackbarProvider>
+            </ToastProvider>
           </SessionProvider>
         </LanguageProvider>
       </ThemeProvider>
