@@ -18,6 +18,14 @@ import { formatAmount, parseBettingText } from '../lib/bettingParser';
 import { deleteCustomerFromApi } from '../lib/apiClient';
 import { useApiSync, mergeCustomers } from '../hooks/useApiSync';
 import BottomSheet from '../components/BottomSheet';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '../components/ui/dialog';
+import { Calendar as CalendarComponent } from '../components/ui/calendar';
 
 export default function CustomerList() {
   const { t } = useLanguage();
@@ -542,54 +550,58 @@ export default function CustomerList() {
             </label>
           </div>
         )}
-      </BottomSheet>
-
-      {/* ── Date Picker Bottom Sheet ── */}
-      <BottomSheet
-        open={showDateSheet}
-        onClose={() => setShowDateSheet(false)}
-        title={t('modal.searchByDate')}
-        footer={
-          <>
+      </BottomSheet>      {/* ── Search by Date Calendar Dialog ── */}
+      <Dialog open={showDateSheet} onOpenChange={setShowDateSheet}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('modal.searchByDate')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex justify-center">
+              <CalendarComponent
+                mode="single"
+                selected={new Date(pickerDate + 'T00:00:00')}
+                onSelect={(day) => {
+                  if (day) {
+                    const year = day.getFullYear();
+                    const month = String(day.getMonth() + 1).padStart(2, '0');
+                    const dayStr = String(day.getDate()).padStart(2, '0');
+                    setPickerDate(`${year}-${month}-${dayStr}`);
+                  }
+                }}
+                disabled={(date) => date > new Date()}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">{t('modal.session')}</label>
+              <div className="toggle-group">
+                <button
+                  className={`toggle-btn${pickerSession === 'morning' ? ' active' : ''}`}
+                  onClick={() => setPickerSession('morning')}
+                >
+                  <Sun size={13} />
+                  {t('modal.morning')}
+                </button>
+                <button
+                  className={`toggle-btn${pickerSession === 'evening' ? ' active' : ''}`}
+                  onClick={() => setPickerSession('evening')}
+                >
+                  <Moon size={13} />
+                  {t('modal.evening')}
+                </button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
             <button className="btn btn-secondary" onClick={() => setShowDateSheet(false)}>
               {t('modal.cancel')}
             </button>
             <button className="btn btn-primary" onClick={handleDateSelect}>
               {t('winners.search')}
             </button>
-          </>
-        }
-      >
-        <div className="form-group">
-          <label className="form-label">{t('modal.date')}</label>
-          <input
-            className="form-input"
-            type="date"
-            value={pickerDate}
-            onChange={e => setPickerDate(e.target.value)}
-          />
-        </div>
-        <div className="form-group">
-          <label className="form-label">{t('modal.session')}</label>
-          <div className="toggle-group">
-            <button
-              className={`toggle-btn${pickerSession === 'morning' ? ' active' : ''}`}
-              onClick={() => setPickerSession('morning')}
-            >
-              <Sun size={13} />
-              {t('modal.morning')}
-            </button>
-            <button
-              className={`toggle-btn${pickerSession === 'evening' ? ' active' : ''}`}
-              onClick={() => setPickerSession('evening')}
-            >
-              <Moon size={13} />
-              {t('modal.evening')}
-            </button>
-          </div>
-        </div>
-      </BottomSheet>
-
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {/* ── Delete Confirmation Bottom Sheet ── */}
       <BottomSheet
         open={showDeleteSheet}
