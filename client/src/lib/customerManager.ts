@@ -22,6 +22,9 @@ export interface CustomerRecord {
   session: "morning" | "evening";
   bettingType: "2D" | "3D";
   createdAt?: string;
+  source?: "web" | "telegram"; // origin of the record
+  telegramUserId?: number;
+  telegramChatId?: number;
 }
 
 export interface DailyCustomerData {

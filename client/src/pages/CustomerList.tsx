@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Edit2, Trash2, Calendar, Sun, Moon, Users,
-  Banknote, CreditCard, RefreshCw, ChevronRight, Hash
+  Banknote, CreditCard, RefreshCw, Hash, Send, Wifi, WifiOff,
+  RotateCcw
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useSession } from '../contexts/SessionContext';
@@ -15,14 +16,16 @@ import {
   type CustomerRecord,
 } from '../lib/customerManager';
 import { formatAmount, parseBettingText } from '../lib/bettingParser';
+import { deleteCustomerFromApi } from '../lib/apiClient';
+import { useApiSync, mergeCustomers } from '../hooks/useApiSync';
 import BottomSheet from '../components/BottomSheet';
 
 export default function CustomerList() {
   const { t } = useLanguage();
-  const { date, session, sessionKey } = useSession();
+  const { date, session } = useSession();
   const { showToast } = useToast();
 
-  const [customers, setCustomers] = useState<CustomerRecord[]>([]);
+  const [localCustomers, setLocalCustomers] = useState<CustomerRecord[]>([]);
   const [showAddSheet, setShowAddSheet] = useState(false);
   const [showDateSheet, setShowDateSheet] = useState(false);
   const [showDeleteSheet, setShowDeleteSheet] = useState(false);
@@ -31,9 +34,9 @@ export default function CustomerList() {
 
   // Date and session state
   const [displayDate, setDisplayDate] = useState(date.toISOString().split('T')[0]);
-  const [displaySession, setDisplaySession] = useState(session);
+  const [displaySession, setDisplaySession] = useState<'morning' | 'evening'>(session);
   const [pickerDate, setPickerDate] = useState(displayDate);
-  const [pickerSession, setPickerSession] = useState(displaySession);
+  const [pickerSession, setPickerSession] = useState<'morning' | 'evening'>(displaySession);
 
   // Form state
   const [name, setName] = useState('');
@@ -46,14 +49,26 @@ export default function CustomerList() {
     new Date().getHours() < 12 ? 'morning' : 'evening'
   );
 
+  // API sync hook
+  const { remoteCustomers, isLoading: isSyncing, lastSynced, apiAvailable, refresh } = useApiSync({
+    date: displayDate,
+    session: displaySession,
+  });
+
+  // Merged customers: local + remote (deduped)
+  const customers = useMemo(
+    () => mergeCustomers(localCustomers, remoteCustomers),
+    [localCustomers, remoteCustomers]
+  );
+
   useEffect(() => {
-    loadCustomers();
+    loadLocalCustomers();
   }, [displayDate, displaySession]);
 
-  const loadCustomers = () => {
-    const dateObj = new Date(displayDate);
+  const loadLocalCustomers = () => {
+    const dateObj = new Date(displayDate + 'T00:00:00');
     const loaded = getCustomersForSession(getSessionKey(dateObj, displaySession));
-    setCustomers(loaded);
+    setLocalCustomers(loaded);
   };
 
   const resetForm = () => {
@@ -85,7 +100,7 @@ export default function CustomerList() {
       }
 
       const now = new Date();
-      const customerDate = new Date(formDate);
+      const customerDate = new Date(formDate + 'T00:00:00');
       customerDate.setHours(now.getHours(), now.getMinutes(), 0);
 
       const customer: CustomerRecord = {
@@ -98,6 +113,7 @@ export default function CustomerList() {
         date: customerDate,
         session: formSession,
         totalBet: parsed.totalAmount,
+        source: 'web',
       };
 
       if (editingCustomer) {
@@ -121,7 +137,7 @@ export default function CustomerList() {
 
       resetForm();
       setShowAddSheet(false);
-      loadCustomers();
+      loadLocalCustomers();
     } catch {
       showToast('Error parsing betting data', 'error');
     }
@@ -132,13 +148,26 @@ export default function CustomerList() {
     setShowDeleteSheet(true);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!deletingId) return;
-    const currentSessionKey = getSessionKey(new Date(displayDate), displaySession);
-    if (deleteCustomerFromSession(deletingId, currentSessionKey)) {
-      showToast('Customer deleted', 'success');
-      loadCustomers();
+
+    const customerToDelete = customers.find(c => c.id === deletingId);
+    const currentSessionKey = getSessionKey(new Date(displayDate + 'T00:00:00'), displaySession);
+
+    // Try to delete from localStorage first
+    const deletedLocal = deleteCustomerFromSession(deletingId, currentSessionKey);
+
+    // If it's a remote (Telegram) customer, also delete from API
+    if (customerToDelete?.source === 'telegram' && apiAvailable) {
+      await deleteCustomerFromApi(deletingId, displayDate, displaySession);
     }
+
+    if (deletedLocal || customerToDelete?.source === 'telegram') {
+      showToast('Customer deleted', 'success');
+      loadLocalCustomers();
+      await refresh();
+    }
+
     setDeletingId(null);
     setShowDeleteSheet(false);
   };
@@ -154,7 +183,7 @@ export default function CustomerList() {
     const bettingArray = Array.isArray(customer.bettingData)
       ? customer.bettingData
       : Object.values(customer.bettingData || {}).flat();
-    setBettingData(bettingArray.map((b: any) => `${b.number} ${b.amount}`).join('\n'));
+    setBettingData((bettingArray as any[]).map((b: any) => `${b.number} ${b.amount}`).join('\n'));
     setShowAddSheet(true);
   };
 
@@ -164,11 +193,18 @@ export default function CustomerList() {
     setShowDateSheet(false);
   };
 
+  const handleRefresh = async () => {
+    loadLocalCustomers();
+    await refresh();
+    showToast('Refreshed', 'success');
+  };
+
   const stats = useMemo(() => {
     const cash = customers.filter(c => c.paymentType === 'cash').length;
     const credit = customers.filter(c => c.paymentType === 'credit').length;
     const total = customers.reduce((sum, c) => sum + c.totalBet, 0);
-    return { cash, credit, total };
+    const fromTelegram = customers.filter(c => (c as any).source === 'telegram').length;
+    return { cash, credit, total, fromTelegram };
   }, [customers]);
 
   const displayDateFormatted = new Date(displayDate + 'T00:00:00').toLocaleDateString('en-US', {
@@ -185,8 +221,36 @@ export default function CustomerList() {
     <>
       {/* Page Header */}
       <div className="page-header">
-        <h1 className="page-title">{t('customers.title')}</h1>
-        <p className="page-subtitle">{t('customers.description')}</p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <h1 className="page-title">{t('customers.title')}</h1>
+            <p className="page-subtitle">{t('customers.description')}</p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* API status indicator */}
+            {apiAvailable ? (
+              <span title={`Synced ${lastSynced ? lastSynced.toLocaleTimeString() : ''}`}
+                style={{ color: 'var(--success)', display: 'flex' }}>
+                <Wifi size={16} />
+              </span>
+            ) : (
+              <span title="Backend offline – showing local data only"
+                style={{ color: 'var(--text-muted)', display: 'flex' }}>
+                <WifiOff size={16} />
+              </span>
+            )}
+            {/* Manual refresh button */}
+            <button
+              className="btn-icon"
+              onClick={handleRefresh}
+              disabled={isSyncing}
+              title="Refresh"
+              style={{ opacity: isSyncing ? 0.5 : 1 }}
+            >
+              <RotateCcw size={16} style={{ animation: isSyncing ? 'spin 1s linear infinite' : undefined }} />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Date Bar */}
@@ -239,6 +303,19 @@ export default function CustomerList() {
         </div>
       </div>
 
+      {/* Telegram sync info banner (only when API is available and there are Telegram customers) */}
+      {apiAvailable && stats.fromTelegram > 0 && (
+        <div className="sync-banner">
+          <Send size={13} />
+          <span>{stats.fromTelegram} customer{stats.fromTelegram !== 1 ? 's' : ''} from Telegram bot</span>
+          {lastSynced && (
+            <span style={{ marginLeft: 'auto', opacity: 0.7, fontSize: 11 }}>
+              {lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Add Button */}
       <button
         className="btn btn-primary btn-full btn-lg mb-4"
@@ -263,12 +340,21 @@ export default function CustomerList() {
             const bettingArray = Array.isArray(customer.bettingData)
               ? customer.bettingData
               : Object.values(customer.bettingData || {}).flat();
+            const isFromTelegram = (customer as any).source === 'telegram';
 
             return (
-              <div key={customer.id} className="customer-card">
+              <div key={customer.id} className={`customer-card${isFromTelegram ? ' telegram-card' : ''}`}>
                 <div className="customer-card-header">
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="customer-name">{customer.name}</div>
+                    <div className="customer-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {customer.name}
+                      {isFromTelegram && (
+                        <span className="badge badge-telegram" title="Added via Telegram bot">
+                          <Send size={9} />
+                          TG
+                        </span>
+                      )}
+                    </div>
                     <div className="customer-meta">
                       <span className={`badge badge-${customer.bettingType === '2D' ? 'accent' : 'info'}`}>
                         <Hash size={9} />
