@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Edit2, Trash2, Calendar, Sun, Moon, Users,
-  Banknote, CreditCard, RefreshCw, Hash, Send
+  Banknote, CreditCard, Hash
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useSession } from '../contexts/SessionContext';
@@ -18,14 +18,6 @@ import { formatAmount, parseBettingText } from '../lib/bettingParser';
 import { deleteCustomerFromApi } from '../lib/apiClient';
 import { useApiSync, mergeCustomers } from '../hooks/useApiSync';
 import BottomSheet from '../components/BottomSheet';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '../components/ui/dialog';
-import { Calendar as CalendarComponent } from '../components/ui/calendar';
 
 export default function CustomerList() {
   const { t } = useLanguage();
@@ -108,109 +100,103 @@ export default function CustomerList() {
         return;
       }
 
-      const now = new Date();
-      // Parse date string properly without timezone issues
+      // Parse form date properly without timezone issues
       const [year, month, day] = formDate.split('-').map(Number);
-      const customerDate = new Date(year, month - 1, day, now.getHours(), now.getMinutes(), 0, 0);
-
-      const customer: CustomerRecord = {
-        id: editingCustomer?.id || `customer_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
-        name,
-        bettingData: parsed.entries,
-        paymentType,
-        weeklySettle: paymentType === 'credit' ? weeklySettle : false,
-        bettingType,
-        date: customerDate,
-        session: formSession,
-        totalBet: parsed.totalAmount,
-        source: 'web',
-      };
+      const dateObj = new Date(year, month - 1, day, 0, 0, 0, 0);
+      const sessionKey = getSessionKey(dateObj, formSession);
 
       if (editingCustomer) {
-        // Get the original session key (where the customer currently lives)
-        const originalDate = new Date(editingCustomer.date);
-        const originalSessionKey = getSessionKey(originalDate, editingCustomer.session);
-        const newSessionKey = getSessionKey(customerDate, formSession);
-        if (originalSessionKey !== newSessionKey) {
-          // Date or session changed: delete from old, add to new
-          deleteCustomerFromSession(editingCustomer.id, originalSessionKey);
-          addCustomer(customer, customerDate, formSession);
-        } else {
-          // Same session: just update in place
-          updateCustomerInSession(customer.id, customer, newSessionKey);
-        }
-        showToast('Customer updated', 'success');
+        // Delete old record
+        const oldSessionKey = getSessionKey(
+          new Date(editingCustomer.date),
+          editingCustomer.session
+        );
+        deleteCustomerFromSession(oldSessionKey, editingCustomer.id);
+
+        // Add updated record
+        const updatedCustomer: CustomerRecord = {
+          ...editingCustomer,
+          name,
+          bettingData: parsed.entries,
+          paymentType,
+          weeklySettle,
+          bettingType,
+          date: dateObj,
+          session: formSession,
+          totalBet: parsed.total,
+        };
+        addCustomer(sessionKey, updatedCustomer);
       } else {
-        addCustomer(customer, customerDate, formSession);
-        showToast('Customer added', 'success');
+        // Add new customer
+        const newCustomer: CustomerRecord = {
+          id: `customer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          name,
+          bettingData: parsed.entries,
+          paymentType,
+          weeklySettle,
+          bettingType,
+          date: dateObj,
+          session: formSession,
+          totalBet: parsed.total,
+        };
+        addCustomer(sessionKey, newCustomer);
       }
 
-      resetForm();
+      loadLocalCustomers();
       setShowAddSheet(false);
-      // Reload customers from the new session
-      setTimeout(() => loadLocalCustomers(), 100);
-    } catch {
-      showToast('Error parsing betting data', 'error');
+      resetForm();
+      showToast(editingCustomer ? 'Customer updated' : 'Customer added', 'success');
+    } catch (error) {
+      showToast('Error saving customer: ' + (error as Error).message, 'error');
     }
   };
 
-  const openDeleteSheet = (customerId: string) => {
-    setDeletingId(customerId);
+  const handleEditCustomer = (customer: CustomerRecord) => {
+    setEditingCustomer(customer);
+    setName(customer.name);
+    setBettingData(customer.bettingData.map((b: any) => `${b.number} ${b.amount}${b.type === 'roll' ? 'R' : ''}`).join('\n'));
+    setPaymentType(customer.paymentType);
+    setWeeklySettle(customer.weeklySettle);
+    setBettingType(customer.bettingType);
+    setFormDate(customer.date.toISOString().split('T')[0]);
+    setFormSession(customer.session);
+    setShowAddSheet(true);
+  };
+
+  const openDeleteSheet = (id: string) => {
+    setDeletingId(id);
     setShowDeleteSheet(true);
   };
 
   const handleConfirmDelete = async () => {
     if (!deletingId) return;
 
-    const customerToDelete = customers.find(c => c.id === deletingId);
-    // Parse date string properly without timezone issues
-    const [year, month, day] = displayDate.split('-').map(Number);
-    const dateObj = new Date(year, month - 1, day, 0, 0, 0, 0);
-    const currentSessionKey = getSessionKey(dateObj, displaySession);
+    const customer = customers.find(c => c.id === deletingId);
+    if (!customer) return;
 
-    // Try to delete from localStorage first
-    const deletedLocal = deleteCustomerFromSession(deletingId, currentSessionKey);
+    try {
+      // Delete from local storage
+      const sessionKey = getSessionKey(customer.date, customer.session);
+      deleteCustomerFromSession(sessionKey, deletingId);
 
-    // If it's a remote (Telegram) customer, also delete from API
-    if (customerToDelete?.source === 'telegram' && apiAvailable) {
-      await deleteCustomerFromApi(deletingId, displayDate, displaySession);
-    }
+      // Delete from API if available
+      if (apiAvailable) {
+        await deleteCustomerFromApi(deletingId);
+      }
 
-    if (deletedLocal || customerToDelete?.source === 'telegram') {
-      showToast('Customer deleted', 'success');
       loadLocalCustomers();
-      await refresh();
+      setShowDeleteSheet(false);
+      setDeletingId(null);
+      showToast('Customer deleted', 'success');
+    } catch (error) {
+      showToast('Error deleting customer: ' + (error as Error).message, 'error');
     }
-
-    setDeletingId(null);
-    setShowDeleteSheet(false);
-  };
-
-  const handleEditCustomer = (customer: CustomerRecord) => {
-    setEditingCustomer(customer);
-    setName(customer.name);
-    setPaymentType(customer.paymentType);
-    setWeeklySettle(customer.weeklySettle || false);
-    setBettingType(customer.bettingType);
-    setFormDate(new Date(customer.date).toISOString().split('T')[0]);
-    setFormSession(customer.session);
-    const bettingArray = Array.isArray(customer.bettingData)
-      ? customer.bettingData
-      : Object.values(customer.bettingData || {}).flat();
-    setBettingData((bettingArray as any[]).map((b: any) => `${b.number} ${b.amount}`).join('\n'));
-    setShowAddSheet(true);
   };
 
   const handleDateSelect = () => {
     setDisplayDate(pickerDate);
     setDisplaySession(pickerSession);
     setShowDateSheet(false);
-  };
-
-  const handleRefresh = async () => {
-    loadLocalCustomers();
-    await refresh();
-    showToast('Refreshed', 'success');
   };
 
   const stats = useMemo(() => {
@@ -290,44 +276,33 @@ export default function CustomerList() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">{t('customers.cash')}</div>
-          <div className="stat-value success">{stats.cash}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">{t('customers.credit')}</div>
-          <div className="stat-value warning">{stats.credit}</div>
+          <div className="stat-label">{t('customers.cashCredit')}</div>
+          <div className="stat-value">
+            <span className="success">{stats.cash}</span>
+            <span style={{ color: 'var(--text-secondary)', margin: '0 4px' }}>/</span>
+            <span className="warning">{stats.credit}</span>
+          </div>
         </div>
       </div>
 
-      {/* Telegram sync info banner (only when API is available and there are Telegram customers) */}
-      {apiAvailable && stats.fromTelegram > 0 && (
-        <div className="sync-banner">
-          <Send size={13} />
-          <span>{stats.fromTelegram} customer{stats.fromTelegram !== 1 ? 's' : ''} from Telegram bot</span>
-          {lastSynced && (
-            <span style={{ marginLeft: 'auto', opacity: 0.7, fontSize: 11 }}>
-              {lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          )}
-        </div>
-      )}
+      {/* Add Customer Button */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <button
+          className="btn btn-primary btn-full"
+          onClick={() => { setShowAddSheet(true); resetForm(); }}
+        >
+          <Plus size={18} />
+          {t('modal.addCustomer')}
+        </button>
+      </div>
 
-      {/* Add Button */}
-      <button
-        className="btn btn-primary btn-full btn-lg mb-4"
-        onClick={() => { resetForm(); setShowAddSheet(true); }}
-      >
-        <Plus size={18} />
-        {t('customers.addNew')}
-      </button>
-
-      {/* Customer List */}
+      {/* Customers List */}
       {customers.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">
             <Users />
           </div>
-          <h3>{t('customers.noCust')}</h3>
+          <h3>{t('customers.noCustomers')}</h3>
           <p>{t('customers.addFirst')}</p>
         </div>
       ) : (
@@ -336,22 +311,15 @@ export default function CustomerList() {
             const bettingArray = Array.isArray(customer.bettingData)
               ? customer.bettingData
               : Object.values(customer.bettingData || {}).flat();
-            const isFromTelegram = (customer as any).source === 'telegram';
 
             return (
-              <div key={customer.id} className={`customer-card${isFromTelegram ? ' telegram-card' : ''}`}>
+              <div key={customer.id} className="customer-card">
                 <div className="customer-card-header">
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="customer-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
                       {customer.name}
-                      {isFromTelegram && (
-                        <span className="badge badge-telegram" title="Added via Telegram bot">
-                          <Send size={9} />
-                          TG
-                        </span>
-                      )}
                     </div>
-                    <div className="customer-meta">
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                       <span className={`badge badge-${customer.bettingType === '2D' ? 'accent' : 'info'}`}>
                         <Hash size={9} />
                         {customer.bettingType}
@@ -365,12 +333,6 @@ export default function CustomerList() {
                         <span className="badge badge-warning">
                           <CreditCard size={9} />
                           {t('modal.credit')}
-                        </span>
-                      )}
-                      {customer.weeklySettle && (
-                        <span className="badge badge-muted">
-                          <RefreshCw size={9} />
-                          {t('modal.weeklyClear')}
                         </span>
                       )}
                       <span className="badge badge-muted">
@@ -491,13 +453,13 @@ export default function CustomerList() {
               className={`toggle-btn${bettingType === '2D' ? ' active' : ''}`}
               onClick={() => setBettingType('2D')}
             >
-              2D
+              2D (00–99)
             </button>
             <button
               className={`toggle-btn${bettingType === '3D' ? ' active' : ''}`}
               onClick={() => setBettingType('3D')}
             >
-              3D
+              3D (000–999)
             </button>
           </div>
         </div>
@@ -506,11 +468,11 @@ export default function CustomerList() {
         <div className="form-group">
           <label className="form-label">{t('modal.bettingData')}</label>
           <textarea
-            className="form-textarea"
+            className="form-input"
             value={bettingData}
             onChange={e => setBettingData(e.target.value)}
             placeholder={bettingPlaceholder}
-            rows={5}
+            rows={6}
           />
         </div>
 
@@ -535,73 +497,67 @@ export default function CustomerList() {
           </div>
         </div>
 
-        {/* Weekly Settle (credit only) */}
+        {/* Weekly Settle */}
         {paymentType === 'credit' && (
           <div className="form-group">
-            <label className="checkbox-row">
+            <label className="checkbox">
               <input
                 type="checkbox"
-                className="checkbox-input"
                 checked={weeklySettle}
                 onChange={e => setWeeklySettle(e.target.checked)}
-                id="weekly-settle"
               />
               <span className="checkbox-label">{t('modal.weeklyClear')}</span>
             </label>
           </div>
         )}
-      </BottomSheet>      {/* ── Search by Date Calendar Dialog ── */}
-      <Dialog open={showDateSheet} onOpenChange={setShowDateSheet}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{t('modal.searchByDate')}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="flex justify-center">
-              <CalendarComponent
-                mode="single"
-                selected={new Date(pickerDate + 'T00:00:00')}
-                onSelect={(day) => {
-                  if (day) {
-                    const year = day.getFullYear();
-                    const month = String(day.getMonth() + 1).padStart(2, '0');
-                    const dayStr = String(day.getDate()).padStart(2, '0');
-                    setPickerDate(`${year}-${month}-${dayStr}`);
-                  }
-                }}
-                disabled={(date) => date > new Date()}
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">{t('modal.session')}</label>
-              <div className="toggle-group">
-                <button
-                  className={`toggle-btn${pickerSession === 'morning' ? ' active' : ''}`}
-                  onClick={() => setPickerSession('morning')}
-                >
-                  <Sun size={13} />
-                  {t('modal.morning')}
-                </button>
-                <button
-                  className={`toggle-btn${pickerSession === 'evening' ? ' active' : ''}`}
-                  onClick={() => setPickerSession('evening')}
-                >
-                  <Moon size={13} />
-                  {t('modal.evening')}
-                </button>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
+      </BottomSheet>
+
+      {/* ── Search by Date Bottom Sheet ── */}
+      <BottomSheet
+        open={showDateSheet}
+        onClose={() => setShowDateSheet(false)}
+        title={t('modal.searchByDate')}
+        footer={
+          <>
             <button className="btn btn-secondary" onClick={() => setShowDateSheet(false)}>
               {t('modal.cancel')}
             </button>
             <button className="btn btn-primary" onClick={handleDateSelect}>
               {t('winners.search')}
             </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        <div className="form-group">
+          <label className="form-label">{t('modal.date')}</label>
+          <input
+            className="form-input"
+            type="date"
+            value={pickerDate}
+            onChange={e => setPickerDate(e.target.value)}
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">{t('modal.session')}</label>
+          <div className="toggle-group">
+            <button
+              className={`toggle-btn${pickerSession === 'morning' ? ' active' : ''}`}
+              onClick={() => setPickerSession('morning')}
+            >
+              <Sun size={13} />
+              {t('modal.morning')}
+            </button>
+            <button
+              className={`toggle-btn${pickerSession === 'evening' ? ' active' : ''}`}
+              onClick={() => setPickerSession('evening')}
+            >
+              <Moon size={13} />
+              {t('modal.evening')}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
+
       {/* ── Delete Confirmation Bottom Sheet ── */}
       <BottomSheet
         open={showDeleteSheet}

@@ -12,14 +12,7 @@ import {
   type CustomerRecord,
 } from '../lib/customerManager';
 import { formatAmount } from '../lib/bettingParser';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '../components/ui/dialog';
-import { Calendar as CalendarComponent } from '../components/ui/calendar';
+import BottomSheet from '../components/BottomSheet';
 
 export default function WinnerSearch() {
   const { t } = useLanguage();
@@ -273,58 +266,51 @@ export default function WinnerSearch() {
         </>
       )}
 
-      {/* Date Picker Calendar Dialog */}
-      <Dialog open={showDateSheet} onOpenChange={setShowDateSheet}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{t('winners.searchByDate')}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="flex justify-center">
-              <CalendarComponent
-                mode="single"
-                selected={new Date(pickerDate + 'T00:00:00')}
-                onSelect={(day) => {
-                  if (day) {
-                    const year = day.getFullYear();
-                    const month = String(day.getMonth() + 1).padStart(2, '0');
-                    const dayStr = String(day.getDate()).padStart(2, '0');
-                    setPickerDate(`${year}-${month}-${dayStr}`);
-                  }
-                }}
-                disabled={(date) => date > new Date()}
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">{t('modal.session')}</label>
-              <div className="toggle-group">
-                <button
-                  className={`toggle-btn${pickerSession === 'morning' ? ' active' : ''}`}
-                  onClick={() => setPickerSession('morning')}
-                >
-                  <Sun size={13} />
-                  {t('modal.morning')}
-                </button>
-                <button
-                  className={`toggle-btn${pickerSession === 'evening' ? ' active' : ''}`}
-                  onClick={() => setPickerSession('evening')}
-                >
-                  <Moon size={13} />
-                  {t('modal.evening')}
-                </button>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
+      {/* Date Picker Bottom Sheet */}
+      <BottomSheet
+        open={showDateSheet}
+        onClose={() => setShowDateSheet(false)}
+        title={t('winners.searchByDate')}
+        footer={
+          <>
             <button className="btn btn-secondary" onClick={() => setShowDateSheet(false)}>
               {t('modal.cancel')}
             </button>
             <button className="btn btn-primary" onClick={handleDateSelect}>
               {t('winners.search')}
             </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+      >
+        <div className="form-group">
+          <label className="form-label">{t('modal.date')}</label>
+          <input
+            className="form-input"
+            type="date"
+            value={pickerDate}
+            onChange={e => setPickerDate(e.target.value)}
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">{t('modal.session')}</label>
+          <div className="toggle-group">
+            <button
+              className={`toggle-btn${pickerSession === 'morning' ? ' active' : ''}`}
+              onClick={() => setPickerSession('morning')}
+            >
+              <Sun size={13} />
+              {t('modal.morning')}
+            </button>
+            <button
+              className={`toggle-btn${pickerSession === 'evening' ? ' active' : ''}`}
+              onClick={() => setPickerSession('evening')}
+            >
+              <Moon size={13} />
+              {t('modal.evening')}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
     </>
   );
 }
