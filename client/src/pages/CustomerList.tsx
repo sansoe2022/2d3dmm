@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Edit2, Trash2, Calendar, Sun, Moon, Users,
-  Banknote, CreditCard, Hash
+  Banknote, CreditCard, RefreshCw, Hash, Send
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useSession } from '../contexts/SessionContext';
@@ -100,103 +100,109 @@ export default function CustomerList() {
         return;
       }
 
-      // Parse form date properly without timezone issues
+      const now = new Date();
+      // Parse date string properly without timezone issues
       const [year, month, day] = formDate.split('-').map(Number);
-      const dateObj = new Date(year, month - 1, day, 0, 0, 0, 0);
-      const sessionKey = getSessionKey(dateObj, formSession);
+      const customerDate = new Date(year, month - 1, day, now.getHours(), now.getMinutes(), 0, 0);
+
+      const customer: CustomerRecord = {
+        id: editingCustomer?.id || `customer_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+        name,
+        bettingData: parsed.entries,
+        paymentType,
+        weeklySettle: paymentType === 'credit' ? weeklySettle : false,
+        bettingType,
+        date: customerDate,
+        session: formSession,
+        totalBet: parsed.totalAmount,
+        source: 'web',
+      };
 
       if (editingCustomer) {
-        // Delete old record
-        const oldSessionKey = getSessionKey(
-          new Date(editingCustomer.date),
-          editingCustomer.session
-        );
-        deleteCustomerFromSession(oldSessionKey, editingCustomer.id);
-
-        // Add updated record
-        const updatedCustomer: CustomerRecord = {
-          ...editingCustomer,
-          name,
-          bettingData: parsed.entries,
-          paymentType,
-          weeklySettle,
-          bettingType,
-          date: dateObj,
-          session: formSession,
-          totalBet: parsed.total,
-        };
-        addCustomer(sessionKey, updatedCustomer);
+        // Get the original session key (where the customer currently lives)
+        const originalDate = new Date(editingCustomer.date);
+        const originalSessionKey = getSessionKey(originalDate, editingCustomer.session);
+        const newSessionKey = getSessionKey(customerDate, formSession);
+        if (originalSessionKey !== newSessionKey) {
+          // Date or session changed: delete from old, add to new
+          deleteCustomerFromSession(editingCustomer.id, originalSessionKey);
+          addCustomer(customer, customerDate, formSession);
+        } else {
+          // Same session: just update in place
+          updateCustomerInSession(customer.id, customer, newSessionKey);
+        }
+        showToast('Customer updated', 'success');
       } else {
-        // Add new customer
-        const newCustomer: CustomerRecord = {
-          id: `customer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          name,
-          bettingData: parsed.entries,
-          paymentType,
-          weeklySettle,
-          bettingType,
-          date: dateObj,
-          session: formSession,
-          totalBet: parsed.total,
-        };
-        addCustomer(sessionKey, newCustomer);
+        addCustomer(customer, customerDate, formSession);
+        showToast('Customer added', 'success');
       }
 
-      loadLocalCustomers();
-      setShowAddSheet(false);
       resetForm();
-      showToast(editingCustomer ? 'Customer updated' : 'Customer added', 'success');
-    } catch (error) {
-      showToast('Error saving customer: ' + (error as Error).message, 'error');
+      setShowAddSheet(false);
+      // Reload customers from the new session
+      setTimeout(() => loadLocalCustomers(), 100);
+    } catch {
+      showToast('Error parsing betting data', 'error');
     }
   };
 
-  const handleEditCustomer = (customer: CustomerRecord) => {
-    setEditingCustomer(customer);
-    setName(customer.name);
-    setBettingData(customer.bettingData.map((b: any) => `${b.number} ${b.amount}${b.type === 'roll' ? 'R' : ''}`).join('\n'));
-    setPaymentType(customer.paymentType);
-    setWeeklySettle(customer.weeklySettle);
-    setBettingType(customer.bettingType);
-    setFormDate(customer.date.toISOString().split('T')[0]);
-    setFormSession(customer.session);
-    setShowAddSheet(true);
-  };
-
-  const openDeleteSheet = (id: string) => {
-    setDeletingId(id);
+  const openDeleteSheet = (customerId: string) => {
+    setDeletingId(customerId);
     setShowDeleteSheet(true);
   };
 
   const handleConfirmDelete = async () => {
     if (!deletingId) return;
 
-    const customer = customers.find(c => c.id === deletingId);
-    if (!customer) return;
+    const customerToDelete = customers.find(c => c.id === deletingId);
+    // Parse date string properly without timezone issues
+    const [year, month, day] = displayDate.split('-').map(Number);
+    const dateObj = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const currentSessionKey = getSessionKey(dateObj, displaySession);
 
-    try {
-      // Delete from local storage
-      const sessionKey = getSessionKey(customer.date, customer.session);
-      deleteCustomerFromSession(sessionKey, deletingId);
+    // Try to delete from localStorage first
+    const deletedLocal = deleteCustomerFromSession(deletingId, currentSessionKey);
 
-      // Delete from API if available
-      if (apiAvailable) {
-        await deleteCustomerFromApi(deletingId);
-      }
-
-      loadLocalCustomers();
-      setShowDeleteSheet(false);
-      setDeletingId(null);
-      showToast('Customer deleted', 'success');
-    } catch (error) {
-      showToast('Error deleting customer: ' + (error as Error).message, 'error');
+    // If it's a remote (Telegram) customer, also delete from API
+    if (customerToDelete?.source === 'telegram' && apiAvailable) {
+      await deleteCustomerFromApi(deletingId, displayDate, displaySession);
     }
+
+    if (deletedLocal || customerToDelete?.source === 'telegram') {
+      showToast('Customer deleted', 'success');
+      loadLocalCustomers();
+      await refresh();
+    }
+
+    setDeletingId(null);
+    setShowDeleteSheet(false);
+  };
+
+  const handleEditCustomer = (customer: CustomerRecord) => {
+    setEditingCustomer(customer);
+    setName(customer.name);
+    setPaymentType(customer.paymentType);
+    setWeeklySettle(customer.weeklySettle || false);
+    setBettingType(customer.bettingType);
+    setFormDate(new Date(customer.date).toISOString().split('T')[0]);
+    setFormSession(customer.session);
+    const bettingArray = Array.isArray(customer.bettingData)
+      ? customer.bettingData
+      : Object.values(customer.bettingData || {}).flat();
+    setBettingData((bettingArray as any[]).map((b: any) => `${b.number} ${b.amount}`).join('\n'));
+    setShowAddSheet(true);
   };
 
   const handleDateSelect = () => {
     setDisplayDate(pickerDate);
     setDisplaySession(pickerSession);
     setShowDateSheet(false);
+  };
+
+  const handleRefresh = async () => {
+    loadLocalCustomers();
+    await refresh();
+    showToast('Refreshed', 'success');
   };
 
   const stats = useMemo(() => {
@@ -276,33 +282,44 @@ export default function CustomerList() {
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">{t('customers.cashCredit')}</div>
-          <div className="stat-value">
-            <span className="success">{stats.cash}</span>
-            <span style={{ color: 'var(--text-secondary)', margin: '0 4px' }}>/</span>
-            <span className="warning">{stats.credit}</span>
-          </div>
+          <div className="stat-label">{t('customers.cash')}</div>
+          <div className="stat-value success">{stats.cash}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">{t('customers.credit')}</div>
+          <div className="stat-value warning">{stats.credit}</div>
         </div>
       </div>
 
-      {/* Add Customer Button */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <button
-          className="btn btn-primary btn-full"
-          onClick={() => { setShowAddSheet(true); resetForm(); }}
-        >
-          <Plus size={18} />
-          {t('modal.addCustomer')}
-        </button>
-      </div>
+      {/* Telegram sync info banner (only when API is available and there are Telegram customers) */}
+      {apiAvailable && stats.fromTelegram > 0 && (
+        <div className="sync-banner">
+          <Send size={13} />
+          <span>{stats.fromTelegram} customer{stats.fromTelegram !== 1 ? 's' : ''} from Telegram bot</span>
+          {lastSynced && (
+            <span style={{ marginLeft: 'auto', opacity: 0.7, fontSize: 11 }}>
+              {lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+        </div>
+      )}
 
-      {/* Customers List */}
+      {/* Add Button */}
+      <button
+        className="btn btn-primary btn-full btn-lg mb-4"
+        onClick={() => { resetForm(); setShowAddSheet(true); }}
+      >
+        <Plus size={18} />
+        {t('customers.addNew')}
+      </button>
+
+      {/* Customer List */}
       {customers.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">
             <Users />
           </div>
-          <h3>{t('customers.noCustomers')}</h3>
+          <h3>{t('customers.noCust')}</h3>
           <p>{t('customers.addFirst')}</p>
         </div>
       ) : (
@@ -311,15 +328,22 @@ export default function CustomerList() {
             const bettingArray = Array.isArray(customer.bettingData)
               ? customer.bettingData
               : Object.values(customer.bettingData || {}).flat();
+            const isFromTelegram = (customer as any).source === 'telegram';
 
             return (
-              <div key={customer.id} className="customer-card">
+              <div key={customer.id} className={`customer-card${isFromTelegram ? ' telegram-card' : ''}`}>
                 <div className="customer-card-header">
-                  <div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="customer-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       {customer.name}
+                      {isFromTelegram && (
+                        <span className="badge badge-telegram" title="Added via Telegram bot">
+                          <Send size={9} />
+                          TG
+                        </span>
+                      )}
                     </div>
-                    <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                    <div className="customer-meta">
                       <span className={`badge badge-${customer.bettingType === '2D' ? 'accent' : 'info'}`}>
                         <Hash size={9} />
                         {customer.bettingType}
@@ -333,6 +357,12 @@ export default function CustomerList() {
                         <span className="badge badge-warning">
                           <CreditCard size={9} />
                           {t('modal.credit')}
+                        </span>
+                      )}
+                      {customer.weeklySettle && (
+                        <span className="badge badge-muted">
+                          <RefreshCw size={9} />
+                          {t('modal.weeklyClear')}
                         </span>
                       )}
                       <span className="badge badge-muted">
@@ -453,13 +483,13 @@ export default function CustomerList() {
               className={`toggle-btn${bettingType === '2D' ? ' active' : ''}`}
               onClick={() => setBettingType('2D')}
             >
-              2D (00–99)
+              2D
             </button>
             <button
               className={`toggle-btn${bettingType === '3D' ? ' active' : ''}`}
               onClick={() => setBettingType('3D')}
             >
-              3D (000–999)
+              3D
             </button>
           </div>
         </div>
@@ -468,11 +498,11 @@ export default function CustomerList() {
         <div className="form-group">
           <label className="form-label">{t('modal.bettingData')}</label>
           <textarea
-            className="form-input"
+            className="form-textarea"
             value={bettingData}
             onChange={e => setBettingData(e.target.value)}
             placeholder={bettingPlaceholder}
-            rows={6}
+            rows={5}
           />
         </div>
 
@@ -497,14 +527,16 @@ export default function CustomerList() {
           </div>
         </div>
 
-        {/* Weekly Settle */}
+        {/* Weekly Settle (credit only) */}
         {paymentType === 'credit' && (
           <div className="form-group">
-            <label className="checkbox">
+            <label className="checkbox-row">
               <input
                 type="checkbox"
+                className="checkbox-input"
                 checked={weeklySettle}
                 onChange={e => setWeeklySettle(e.target.checked)}
+                id="weekly-settle"
               />
               <span className="checkbox-label">{t('modal.weeklyClear')}</span>
             </label>
@@ -512,7 +544,7 @@ export default function CustomerList() {
         )}
       </BottomSheet>
 
-      {/* ── Search by Date Bottom Sheet ── */}
+      {/* ── Date Picker Bottom Sheet ── */}
       <BottomSheet
         open={showDateSheet}
         onClose={() => setShowDateSheet(false)}
