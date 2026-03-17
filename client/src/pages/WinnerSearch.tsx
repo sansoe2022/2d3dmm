@@ -50,7 +50,10 @@ export default function WinnerSearch() {
       return;
     }
 
-    const sk = getSessionKey(new Date(displayDate), displaySession);
+    // Parse date string properly without timezone issues
+    const [year, month, day] = displayDate.split('-').map(Number);
+    const dateObj = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const sk = getSessionKey(dateObj, displaySession);
     const customers = getCustomersForSession(sk);
     const winnersList: Array<{ customer: CustomerRecord; amount: number }> = [];
 
@@ -89,9 +92,13 @@ export default function WinnerSearch() {
   const totalPayout = winners.reduce((sum, w) => sum + w.amount, 0);
   const cashWinners = winners.filter(w => w.customer.paymentType === 'cash').length;
 
-  const displayDateFormatted = new Date(displayDate + 'T00:00:00').toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  });
+  const displayDateFormatted = (() => {
+    const [year, month, day] = displayDate.split('-').map(Number);
+    const dateObj = new Date(year, month - 1, day, 0, 0, 0, 0);
+    return dateObj.toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+    });
+  })();
 
   return (
     <>

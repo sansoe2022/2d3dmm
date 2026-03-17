@@ -98,7 +98,7 @@ export function addCustomer(
 
   const newCustomer: CustomerRecord = {
     ...customer,
-    id: customer.id || `customer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    id: customer.id || `customer_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
     createdAt: customer.createdAt || new Date().toISOString(),
   };
 

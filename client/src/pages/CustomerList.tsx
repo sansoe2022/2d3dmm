@@ -66,7 +66,9 @@ export default function CustomerList() {
   }, [displayDate, displaySession]);
 
   const loadLocalCustomers = () => {
-    const dateObj = new Date(displayDate + 'T00:00:00');
+    // Parse date string properly without timezone issues
+    const [year, month, day] = displayDate.split('-').map(Number);
+    const dateObj = new Date(year, month - 1, day, 0, 0, 0, 0);
     const loaded = getCustomersForSession(getSessionKey(dateObj, displaySession));
     setLocalCustomers(loaded);
   };
@@ -100,11 +102,12 @@ export default function CustomerList() {
       }
 
       const now = new Date();
-      const customerDate = new Date(formDate + 'T00:00:00');
-      customerDate.setHours(now.getHours(), now.getMinutes(), 0);
+      // Parse date string properly without timezone issues
+      const [year, month, day] = formDate.split('-').map(Number);
+      const customerDate = new Date(year, month - 1, day, now.getHours(), now.getMinutes(), 0, 0);
 
       const customer: CustomerRecord = {
-        id: editingCustomer?.id || Date.now().toString(),
+        id: editingCustomer?.id || `customer_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
         name,
         bettingData: parsed.entries,
         paymentType,
@@ -137,7 +140,8 @@ export default function CustomerList() {
 
       resetForm();
       setShowAddSheet(false);
-      loadLocalCustomers();
+      // Reload customers from the new session
+      setTimeout(() => loadLocalCustomers(), 100);
     } catch {
       showToast('Error parsing betting data', 'error');
     }
@@ -152,7 +156,10 @@ export default function CustomerList() {
     if (!deletingId) return;
 
     const customerToDelete = customers.find(c => c.id === deletingId);
-    const currentSessionKey = getSessionKey(new Date(displayDate + 'T00:00:00'), displaySession);
+    // Parse date string properly without timezone issues
+    const [year, month, day] = displayDate.split('-').map(Number);
+    const dateObj = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const currentSessionKey = getSessionKey(dateObj, displaySession);
 
     // Try to delete from localStorage first
     const deletedLocal = deleteCustomerFromSession(deletingId, currentSessionKey);
@@ -207,9 +214,13 @@ export default function CustomerList() {
     return { cash, credit, total, fromTelegram };
   }, [customers]);
 
-  const displayDateFormatted = new Date(displayDate + 'T00:00:00').toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  });
+  const displayDateFormatted = (() => {
+    const [year, month, day] = displayDate.split('-').map(Number);
+    const dateObj = new Date(year, month - 1, day, 0, 0, 0, 0);
+    return dateObj.toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+    });
+  })();
 
   const bettingPlaceholder = bettingType === '2D'
     ? '12 500\n34 1000R\n56 300\n78 200R'
