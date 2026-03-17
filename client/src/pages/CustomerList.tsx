@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Edit2, Trash2, Calendar, Sun, Moon, Users,
-  Banknote, CreditCard, RefreshCw, Hash, Send, Wifi, WifiOff,
-  RotateCcw
+  Banknote, CreditCard, RefreshCw, Hash, Send
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useSession } from '../contexts/SessionContext';
@@ -238,28 +237,6 @@ export default function CustomerList() {
             <p className="page-subtitle">{t('customers.description')}</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {/* API status indicator */}
-            {apiAvailable ? (
-              <span title={`Synced ${lastSynced ? lastSynced.toLocaleTimeString() : ''}`}
-                style={{ color: 'var(--success)', display: 'flex' }}>
-                <Wifi size={16} />
-              </span>
-            ) : (
-              <span title="Backend offline – showing local data only"
-                style={{ color: 'var(--text-muted)', display: 'flex' }}>
-                <WifiOff size={16} />
-              </span>
-            )}
-            {/* Manual refresh button */}
-            <button
-              className="btn-icon"
-              onClick={handleRefresh}
-              disabled={isSyncing}
-              title="Refresh"
-              style={{ opacity: isSyncing ? 0.5 : 1 }}
-            >
-              <RotateCcw size={16} style={{ animation: isSyncing ? 'spin 1s linear infinite' : undefined }} />
-            </button>
           </div>
         </div>
       </div>
