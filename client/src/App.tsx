@@ -10,39 +10,47 @@ import CustomerList from './pages/CustomerList';
 import WinnerSearch from './pages/WinnerSearch';
 import SettingsPage from './pages/SettingsPage';
 
-// Firebase Auth အတွက် လိုအပ်သော Import များ
-import { auth, googleProvider } from './firebase';
-import { signInWithRedirect, getRedirectResult, onAuthStateChanged, User, signOut } from 'firebase/auth';
+// Firebase Auth အတွက် Import များ (Email & Password ကို ပြောင်းသုံးထားသည်)
+import { auth } from './firebase';
+import { signInWithEmailAndPassword, onAuthStateChanged, User, signOut } from 'firebase/auth';
 
 function App() {
-  // Login အခြေအနေကို မှတ်သားမည့် State များ
   const [adminUser, setAdminUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  useEffect(() => {
-    // Redirect ဖြင့် Login ဝင်ရာတွင် Error ရှိမရှိ စစ်ဆေးရန်
-    getRedirectResult(auth).catch((error) => {
-      console.error("Login redirect error:", error);
-      alert("Login Error: " + error.message);
-    });
+  // Login Form အတွက် State များ
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-    // User Login ဝင်ထားခြင်း ရှိ/မရှိ အမြဲစောင့်ကြည့်ရန်
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setAdminUser(user);
-      setAuthLoading(false); // စစ်ဆေးပြီးပါက Loading ပိတ်မည်
+      setAuthLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  const handleAdminLogin = () => {
-    signInWithRedirect(auth, googleProvider);
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault(); // Page Refresh ဖြစ်တာကို တားရန်
+    setLoginError('');
+    setIsLoggingIn(true);
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error: any) {
+      console.error('Login error:', error);
+      setLoginError('Email သို့မဟုတ် Password မှားယွင်းနေပါသည်။');
+    } finally {
+      setIsLoggingIn(false);
+    }
   };
 
   const handleAdminLogout = () => {
     signOut(auth);
   };
 
-  // ၁။ စစ်ဆေးနေစဉ် Loading ပြမည်
   if (authLoading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f3f4f6' }}>
@@ -51,28 +59,63 @@ function App() {
     );
   }
 
-  // ၂။ Login မဝင်ရသေးလျှင် (Admin မဟုတ်လျှင်) ဒီ Page ပြမည်
+  // Admin မဟုတ်လျှင် ပြမည့် Login မျက်နှာပြင် (Email & Password Form)
   if (!adminUser) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#f3f4f6' }}>
-        <div style={{ background: 'white', padding: '40px 30px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', textAlign: 'center' }}>
-          <h1 style={{ color: '#2563eb', marginBottom: '10px', fontSize: '24px' }}>Admin Dashboard</h1>
-          <p style={{ color: '#6b7280', marginBottom: '24px', fontSize: '14px' }}>Please sign in to access the control panel.</p>
-          <button
-            onClick={handleAdminLogin}
-            style={{
-              background: '#2563eb', color: 'white', padding: '12px 24px', width: '100%',
-              borderRadius: '8px', border: 'none', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer'
-            }}
-          >
-            Sign in with Google
-          </button>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#f3f4f6', padding: '20px' }}>
+        <div style={{ background: 'white', padding: '40px 30px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', width: '100%', maxWidth: '400px' }}>
+          <h1 style={{ color: '#2563eb', marginBottom: '8px', fontSize: '24px', textAlign: 'center' }}>Admin Login</h1>
+          <p style={{ color: '#6b7280', marginBottom: '24px', fontSize: '14px', textAlign: 'center' }}>Enter your admin credentials</p>
+          
+          <form onSubmit={handleAdminLogin}>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 'bold', color: '#374151' }}>Email</label>
+              <input 
+                type="email" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '16px', boxSizing: 'border-box' }}
+                placeholder="admin@example.com"
+              />
+            </div>
+
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 'bold', color: '#374151' }}>Password</label>
+              <input 
+                type="password" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '16px', boxSizing: 'border-box' }}
+                placeholder="••••••••"
+              />
+            </div>
+
+            {loginError && (
+              <p style={{ color: '#dc2626', fontSize: '14px', marginBottom: '16px', textAlign: 'center', background: '#fee2e2', padding: '8px', borderRadius: '6px' }}>
+                {loginError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              style={{
+                background: isLoggingIn ? '#93c5fd' : '#2563eb', 
+                color: 'white', padding: '12px', width: '100%',
+                borderRadius: '8px', border: 'none', fontWeight: 'bold', fontSize: '16px', 
+                cursor: isLoggingIn ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {isLoggingIn ? 'Logging in...' : 'Sign In'}
+            </button>
+          </form>
         </div>
       </div>
     );
   }
 
-  // ၃။ Login ဝင်ပြီးသားဆိုလျှင် မူလ App အတိုင်း အလုပ်လုပ်မည်
   return (
     <ErrorBoundary>
       <ThemeProvider>
@@ -80,7 +123,6 @@ function App() {
           <SessionProvider>
             <ToastProvider>
               
-              {/* Admin အကောင့် Logout လုပ်ရန် Top Bar အသေးလေး */}
               <div style={{
                 background: '#1f2937', padding: '8px 16px', display: 'flex', 
                 justifyContent: 'space-between', alignItems: 'center', 
@@ -93,14 +135,13 @@ function App() {
                   onClick={handleAdminLogout}
                   style={{
                     background: '#dc2626', color: 'white', border: 'none', 
-                    padding: '6px 12px', borderRadius: '4px', fontWeight: 'bold'
+                    padding: '6px 12px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer'
                   }}
                 >
                   Logout
                 </button>
               </div>
 
-              {/* မူလ Router နှင့် Layout များ */}
               <BrowserRouter>
                 <Routes>
                   <Route element={<MainLayout />}>
