@@ -1,24 +1,17 @@
-/**
- * useApiSync hook
- * Polls the backend API every 30 seconds and fetches both approved and pending customers.
- */
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { CustomerRecord } from '../lib/customerManager';
 
-const POLL_INTERVAL_MS = 30_000; // 30 seconds
+const POLL_INTERVAL_MS = 30_000;
 
-// Automatically remove any trailing slash to prevent double-slash URL errors
 const rawApiUrl = import.meta.env.VITE_API_BASE_URL || 'https://betting-api-worker.sansoe5227.workers.dev';
 const API_BASE_URL = rawApiUrl.replace(/\/$/, '');
 
-// Define the exact structure coming from the D1 Database
 export interface ApiCustomerRow {
   id: string;
   user_id: string;
   customer_name: string;
   betting_type: '2D' | '3D';
-  betting_data: string | any[]; // Sometimes stored as a stringified JSON
+  betting_data: string | any[]; 
   total_amount: number;
   session: 'morning' | 'evening';
   bet_date: string;
@@ -26,9 +19,9 @@ export interface ApiCustomerRow {
 }
 
 interface UseApiSyncOptions {
-  date: string;          // YYYY-MM-DD
+  date: string;          
   session: 'morning' | 'evening';
-  enabled?: boolean;     // set false to disable polling
+  enabled?: boolean;     
 }
 
 interface UseApiSyncResult {
@@ -58,9 +51,7 @@ export function useApiSync({ date, session, enabled = true }: UseApiSyncOptions)
     try {
       const response = await fetch(`${API_BASE_URL}/api/admin/submissions?date=${date}&session=${session}`);
       
-      if (!response.ok) {
-        throw new Error('Failed to fetch from API');
-      }
+      if (!response.ok) throw new Error('Failed to fetch from API');
 
       const data: ApiCustomerRow[] = await response.json();
       
@@ -68,22 +59,42 @@ export function useApiSync({ date, session, enabled = true }: UseApiSyncOptions)
       const pending: CustomerRecord[] = [];
 
       data.forEach((item) => {
-        // Parse the betting_data string back into an array if needed
         const parsedBettingData = typeof item.betting_data === 'string' 
           ? JSON.parse(item.betting_data) 
           : item.betting_data;
 
-        // Map the database columns to the React app's expected properties (ဂုဏ်သတ္တိများကို ကိုက်ညီအောင် ညှိပေးခြင်း)
+        // **ဒီနေရာက အသစ်ထည့်ထားတဲ့ Data ပြုပြင်သည့် အပိုင်းဖြစ်ပါတယ်**
+        const formattedBets: any[] = [];
+        parsedBettingData.forEach((bet: any) => {
+          const numStr = String(bet.number);
+          const amtStr = String(bet.amount).toUpperCase();
+          const isReverse = amtStr.includes('R');
+          const pureAmount = parseInt(amtStr.replace('R', '')) || 0;
+
+          if (pureAmount > 0) {
+            // မူလဂဏန်းကို ထည့်သည်
+            formattedBets.push({ number: numStr, amount: pureAmount });
+            
+            // R ပါခဲ့လျှင် ပြောင်းပြန်ဂဏန်းကိုပါ ထပ်ထည့်ပေးသည်
+            if (isReverse && numStr.length >= 2) {
+              const reversedNum = numStr.split('').reverse().join('');
+              if (reversedNum !== numStr) { // ဥပမာ - 11 လိုဂဏန်းမျိုးဆို ၂ ခါ မထည့်အောင် စစ်တာပါ
+                formattedBets.push({ number: reversedNum, amount: pureAmount });
+              }
+            }
+          }
+        });
+
         const record: CustomerRecord = {
           id: item.id,
-          name: item.customer_name,         // DB customer_name -> React name
-          bettingData: parsedBettingData,
-          paymentType: 'cash',              // Default online submissions to 'cash'
+          name: item.customer_name,         
+          bettingData: formattedBets, // ပြင်ဆင်ပြီးသား Data ကို အသုံးပြုသည်
+          paymentType: 'cash',              
           weeklySettle: false,
           bettingType: item.betting_type,
-          date: new Date(item.bet_date),    // DB bet_date -> React date
+          date: new Date(item.bet_date),    
           session: item.session,
-          totalBet: item.total_amount,      // DB total_amount -> React totalBet
+          totalBet: item.total_amount,      
           source: 'api', 
         };
 
@@ -106,60 +117,38 @@ export function useApiSync({ date, session, enabled = true }: UseApiSyncOptions)
     }
   }, [date, session, enabled]);
 
-  // Initial fetch + re-fetch on date/session change
-  useEffect(() => {
-    fetchRemote();
-  }, [fetchRemote]);
+  useEffect(() => { fetchRemote(); }, [fetchRemote]);
 
-  // Interval execution for polling
   useEffect(() => {
     if (!enabled) return;
     timerRef.current = setInterval(fetchRemote, POLL_INTERVAL_MS);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [fetchRemote, enabled]);
 
-  // Status mutation function
   const updateStatus = async (id: string, status: 'approved' | 'rejected') => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/admin/submissions/${id}/status`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       });
-
       if (!response.ok) throw new Error(`Failed to ${status} customer`);
-      
-      // Re-fetch data immediately after successful status change
       await fetchRemote();
     } catch (error) {
-      console.error(`Error updating customer status to ${status}:`, error);
+      console.error(`Error updating:`, error);
       throw error;
     }
   };
 
-  const approveCustomer = (id: string) => updateStatus(id, 'approved');
-  const rejectCustomer = (id: string) => updateStatus(id, 'rejected');
-
   return {
-    remoteCustomers,
-    pendingCustomers,
-    isLoading,
-    lastSynced,
-    apiAvailable,
-    refresh: fetchRemote,
-    approveCustomer,
-    rejectCustomer
+    remoteCustomers, pendingCustomers, isLoading, lastSynced,
+    apiAvailable, refresh: fetchRemote,
+    approveCustomer: (id: string) => updateStatus(id, 'approved'),
+    rejectCustomer: (id: string) => updateStatus(id, 'rejected')
   };
 }
 
-export function mergeCustomers(
-  local: CustomerRecord[],
-  remote: CustomerRecord[]
-): CustomerRecord[] {
+export function mergeCustomers(local: CustomerRecord[], remote: CustomerRecord[]): CustomerRecord[] {
   const localIds = new Set(local.map(c => c.id));
   const newRemote = remote.filter(r => !localIds.has(r.id));
   const merged = [...local, ...newRemote];
