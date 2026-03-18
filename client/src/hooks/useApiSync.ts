@@ -1,15 +1,20 @@
 /**
  * useApiSync hook
- * Polls the backend API every 30 seconds and merges remote customers
- * with localStorage customers. Remote records (from Telegram bot) are
- * identified by source='telegram' and merged without duplicates.
+ * Polls the backend API every 30 seconds and fetches both approved and pending customers.
+ * Remote records (from Customer App) are identified by source='api' and merged without duplicates.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { CustomerRecord } from '../lib/customerManager';
-import { fetchCustomersFromApi, apiCustomerToRecord } from '../lib/apiClient';
 
 const POLL_INTERVAL_MS = 30_000; // 30 seconds
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://your-worker-url.workers.dev';
+
+// Define the API response structure
+export interface ApiCustomer extends Omit<CustomerRecord, 'date'> {
+  date: string; // ISO string format from the API
+  status?: 'pending' | 'approved' | 'rejected';
+}
 
 interface UseApiSyncOptions {
   date: string;          // YYYY-MM-DD
@@ -19,17 +24,22 @@ interface UseApiSyncOptions {
 
 interface UseApiSyncResult {
   remoteCustomers: CustomerRecord[];
+  pendingCustomers: CustomerRecord[];
   isLoading: boolean;
   lastSynced: Date | null;
   apiAvailable: boolean;
   refresh: () => Promise<void>;
+  approveCustomer: (id: string) => Promise<void>;
+  rejectCustomer: (id: string) => Promise<void>;
 }
 
 export function useApiSync({ date, session, enabled = true }: UseApiSyncOptions): UseApiSyncResult {
   const [remoteCustomers, setRemoteCustomers] = useState<CustomerRecord[]>([]);
+  const [pendingCustomers, setPendingCustomers] = useState<CustomerRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [apiAvailable, setApiAvailable] = useState(false);
+  
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchRemote = useCallback(async () => {
@@ -37,16 +47,38 @@ export function useApiSync({ date, session, enabled = true }: UseApiSyncOptions)
     setIsLoading(true);
 
     try {
-      const apiCustomers = await fetchCustomersFromApi(date, session);
-      if (apiCustomers !== null) {
-        setApiAvailable(true);
-        const records = apiCustomers.map(apiCustomerToRecord);
-        setRemoteCustomers(records);
-        setLastSynced(new Date());
-      } else {
-        setApiAvailable(false);
+      const response = await fetch(`${API_BASE_URL}/api/admin/submissions?date=${date}&session=${session}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch from API');
       }
-    } catch {
+
+      const data: ApiCustomer[] = await response.json();
+      
+      const approved: CustomerRecord[] = [];
+      const pending: CustomerRecord[] = [];
+
+      data.forEach((item) => {
+        // Convert the string date back to a JavaScript Date object
+        const record: CustomerRecord = {
+          ...item,
+          date: new Date(item.date),
+          source: 'api', // Mark as coming from the new API
+        };
+
+        if (item.status === 'pending') {
+          pending.push(record);
+        } else if (item.status === 'approved') {
+          approved.push(record);
+        }
+      });
+
+      setRemoteCustomers(approved);
+      setPendingCustomers(pending);
+      setLastSynced(new Date());
+      setApiAvailable(true);
+    } catch (error) {
+      console.error('API Sync Error:', error);
       setApiAvailable(false);
     } finally {
       setIsLoading(false);
@@ -58,7 +90,7 @@ export function useApiSync({ date, session, enabled = true }: UseApiSyncOptions)
     fetchRemote();
   }, [fetchRemote]);
 
-  // Polling interval
+  // Interval execution for polling
   useEffect(() => {
     if (!enabled) return;
 
@@ -69,20 +101,47 @@ export function useApiSync({ date, session, enabled = true }: UseApiSyncOptions)
     };
   }, [fetchRemote, enabled]);
 
+  // Mutation (ပြုပြင်ပြောင်းလဲခြင်း) to update status
+  const updateStatus = async (id: string, status: 'approved' | 'rejected') => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/submissions/${id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status }),
+      });
+
+      if (!response.ok) throw new Error(`Failed to ${status} customer`);
+      
+      // Re-fetch data immediately after successful status change
+      await fetchRemote();
+    } catch (error) {
+      console.error(`Error updating customer status to ${status}:`, error);
+      throw error;
+    }
+  };
+
+  const approveCustomer = (id: string) => updateStatus(id, 'approved');
+  const rejectCustomer = (id: string) => updateStatus(id, 'rejected');
+
   return {
     remoteCustomers,
+    pendingCustomers,
     isLoading,
     lastSynced,
     apiAvailable,
     refresh: fetchRemote,
+    approveCustomer,
+    rejectCustomer
   };
 }
 
 /**
  * Merge local (localStorage) customers with remote (API) customers.
- * - Remote customers with source='telegram' that don't exist locally are added.
- * - Local customers always take precedence (they may have been edited in the web app).
- * - Deduplication is by customer id.
+ * - Remote customers that don't exist locally are added.
+ * - Local customers always take precedence (ဦးစားပေးမှု) (they may have been edited in the web app).
+ * - Deduplication (ထပ်နေသော ဒေတာများကို ဖယ်ရှားခြင်း) is handled by customer id.
  */
 export function mergeCustomers(
   local: CustomerRecord[],
