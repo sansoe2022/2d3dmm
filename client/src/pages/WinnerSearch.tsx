@@ -5,7 +5,6 @@ import { useSession } from '../contexts/SessionContext';
 import { useToast } from '../contexts/ToastContext';
 import { getCustomersForSession, getSessionKey, type CustomerRecord } from '../lib/customerManager';
 import { formatAmount } from '../lib/bettingParser';
-import BottomSheet from '../components/BottomSheet';
 import { useApiSync, mergeCustomers } from '../hooks/useApiSync';
 
 export default function WinnerSearch() {
@@ -17,11 +16,8 @@ export default function WinnerSearch() {
   const [bettingType, setBettingType] = useState<'2D' | '3D'>('2D');
   const [winners, setWinners] = useState<Array<{ customer: CustomerRecord; amount: number }>>([]);
   const [searched, setSearched] = useState(false);
-  const [showDateSheet, setShowDateSheet] = useState(false);
   const [displayDate, setDisplayDate] = useState(date.toISOString().split('T')[0]);
   const [displaySession, setDisplaySession] = useState(session);
-  const [pickerDate, setPickerDate] = useState(displayDate);
-  const [pickerSession, setPickerSession] = useState(displaySession);
 
   const [localCustomers, setLocalCustomers] = useState<CustomerRecord[]>([]);
   useEffect(() => {
@@ -61,18 +57,15 @@ export default function WinnerSearch() {
 
       let totalWonAmount = 0;
 
-      // 'R' ပါလာခဲ့လျှင် ပြောင်းပြန်ဂဏန်းကိုပါ စစ်ဆေးပေးသည့် အပိုင်း
       bettingData.forEach((entry: any) => {
         const enNum = String(entry.number);
         const enAmtStr = String(entry.amount).toUpperCase();
         const isReverse = enAmtStr.includes('R');
         const pureAmount = parseInt(enAmtStr.replace('R', '')) || 0;
 
-        // တိုက်ရိုက် ထိုးထားသော ဂဏန်းနှင့် ကိုက်ညီမှုရှိမရှိ
         if (enNum === numStr) {
           totalWonAmount += pureAmount;
         }
-        // R ပါခဲ့လျှင် ပြောင်းပြန်ဂဏန်းနှင့် ကိုက်ညီမှုရှိမရှိ
         if (isReverse && enNum.length >= 2) {
           const revNum = enNum.split('').reverse().join('');
           if (revNum === numStr && revNum !== enNum) {
@@ -94,14 +87,6 @@ export default function WinnerSearch() {
     }
   };
 
-  const handleDateSelect = () => {
-    setDisplayDate(pickerDate);
-    setDisplaySession(pickerSession);
-    setShowDateSheet(false);
-    setSearched(false);
-    setWinners([]);
-  };
-
   const totalPayout = winners.reduce((sum, w) => sum + w.amount, 0);
   const cashWinners = winners.filter(w => w.customer.paymentType === 'cash').length;
 
@@ -119,9 +104,24 @@ export default function WinnerSearch() {
       </div>
 
       <div className="date-bar">
-        <button className="date-btn" onClick={() => { setPickerDate(displayDate); setPickerSession(displaySession); setShowDateSheet(true); }}>
-          <Calendar size={15} /> {displayDateFormatted}
-        </button>
+        {/* Date Picker တိုက်ရိုက်ပွင့်မည့် ခလုတ်အသစ် */}
+        <div className="date-btn" style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+          <Calendar size={15} />
+          <span>{displayDateFormatted}</span>
+          <input
+            type="date"
+            value={displayDate}
+            onChange={(e) => {
+              if (e.target.value) {
+                setDisplayDate(e.target.value);
+                setSearched(false);
+                setWinners([]);
+              }
+            }}
+            style={{ position: 'absolute', opacity: 0, left: 0, top: 0, width: '100%', height: '100%', cursor: 'pointer' }}
+          />
+        </div>
+
         <div className="toggle-group">
           <button className={`toggle-btn${displaySession === 'morning' ? ' active' : ''}`} onClick={() => { setDisplaySession('morning'); setSearched(false); }}>
             <Sun size={13} /> {t('modal.morning')}
@@ -210,20 +210,6 @@ export default function WinnerSearch() {
           )}
         </>
       )}
-
-      <BottomSheet open={showDateSheet} onClose={() => setShowDateSheet(false)} title={t('winners.searchByDate')} footer={ <><button className="btn btn-secondary" onClick={() => setShowDateSheet(false)}>{t('modal.cancel')}</button><button className="btn btn-primary" onClick={handleDateSelect}>{t('winners.search')}</button></> }>
-        <div className="form-group">
-          <label className="form-label">{t('modal.date')}</label>
-          <input className="form-input" type="date" value={pickerDate} onChange={e => setPickerDate(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label className="form-label">{t('modal.session')}</label>
-          <div className="toggle-group">
-            <button className={`toggle-btn${pickerSession === 'morning' ? ' active' : ''}`} onClick={() => setPickerSession('morning')}><Sun size={13} /> {t('modal.morning')}</button>
-            <button className={`toggle-btn${pickerSession === 'evening' ? ' active' : ''}`} onClick={() => setPickerSession('evening')}><Moon size={13} /> {t('modal.evening')}</button>
-          </div>
-        </div>
-      </BottomSheet>
     </>
   );
 }
