@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { CustomerRecord } from '../lib/customerManager';
 
 const POLL_INTERVAL_MS = 30_000; // 30 seconds
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://your-worker-url.workers.dev';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://betting-api-worker.sansoe5227.workers.dev/';
 
 // Define the API response structure
 export interface ApiCustomer extends Omit<CustomerRecord, 'date'> {
