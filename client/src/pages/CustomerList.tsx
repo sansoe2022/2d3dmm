@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Edit2, Trash2, Calendar, Sun, Moon, Users,
   Banknote, CreditCard, RefreshCw, Hash, Send,
-  Clock, CheckCircle, XCircle // Added new icons for pending status
+  Clock, CheckCircle, XCircle, Search // Search ကို အသစ်ထည့်ထားသည်
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useSession } from '../contexts/SessionContext';
@@ -27,21 +27,18 @@ export default function CustomerList() {
 
   const [localCustomers, setLocalCustomers] = useState<CustomerRecord[]>([]);
   const [showAddSheet, setShowAddSheet] = useState(false);
-  const [showDateSheet, setShowDateSheet] = useState(false);
   const [showDeleteSheet, setShowDeleteSheet] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<CustomerRecord | null>(null);
 
-  // New State for View Mode (Approved vs Pending)
   const [viewMode, setViewMode] = useState<'approved' | 'pending'>('approved');
+  
+  // Search State
+  const [searchTerm, setSearchTerm] = useState('');
 
-  // Date and session state
   const [displayDate, setDisplayDate] = useState(date.toISOString().split('T')[0]);
   const [displaySession, setDisplaySession] = useState<'morning' | 'evening'>(session);
-  const [pickerDate, setPickerDate] = useState(displayDate);
-  const [pickerSession, setPickerSession] = useState<'morning' | 'evening'>(displaySession);
 
-  // Form state
   const [name, setName] = useState('');
   const [bettingData, setBettingData] = useState('');
   const [paymentType, setPaymentType] = useState<'cash' | 'credit'>('cash');
@@ -52,26 +49,29 @@ export default function CustomerList() {
     new Date().getHours() < 12 ? 'morning' : 'evening'
   );
 
-  // API sync hook updated to pull pending customers and handle actions
   const { 
     remoteCustomers, 
-    pendingCustomers = [], // New: Fetch pending lists from Cloudflare API
+    pendingCustomers = [], 
     isLoading: isSyncing, 
     lastSynced, 
     apiAvailable, 
     refresh,
-    approveCustomer, // New API function to approve
-    rejectCustomer   // New API function to reject
+    approveCustomer, 
+    rejectCustomer   
   } = useApiSync({
     date: displayDate,
     session: displaySession,
   });
 
-  // Merged customers: local + remote (deduped)
   const customers = useMemo(
     () => mergeCustomers(localCustomers, remoteCustomers),
     [localCustomers, remoteCustomers]
   );
+
+  // နာမည်ဖြင့် ရှာဖွေထားသော စာရင်း
+  const filteredCustomers = useMemo(() => {
+    return customers.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  }, [customers, searchTerm]);
 
   useEffect(() => {
     loadLocalCustomers();
@@ -160,7 +160,6 @@ export default function CustomerList() {
 
   const handleConfirmDelete = async () => {
     if (!deletingId) return;
-
     const customerToDelete = customers.find(c => c.id === deletingId);
     const [year, month, day] = displayDate.split('-').map(Number);
     const dateObj = new Date(year, month - 1, day, 0, 0, 0, 0);
@@ -177,7 +176,6 @@ export default function CustomerList() {
       loadLocalCustomers();
       await refresh();
     }
-
     setDeletingId(null);
     setShowDeleteSheet(false);
   };
@@ -197,18 +195,11 @@ export default function CustomerList() {
     setShowAddSheet(true);
   };
 
-  const handleDateSelect = () => {
-    setDisplayDate(pickerDate);
-    setDisplaySession(pickerSession);
-    setShowDateSheet(false);
-  };
-
-  // --- Handlers for New Customer App Workflows ---
   const handleApproveSubmission = async (id: string) => {
     if (approveCustomer) {
       await approveCustomer(id);
       showToast('Customer Approved', 'success');
-      await refresh(); // Refresh lists from backend
+      await refresh();
     }
   };
 
@@ -254,14 +245,20 @@ export default function CustomerList() {
       </div>
 
       <div className="date-bar">
-        <button className="date-btn" onClick={() => {
-          setPickerDate(displayDate);
-          setPickerSession(displaySession);
-          setShowDateSheet(true);
-        }}>
+        {/* Date Picker တိုက်ရိုက်ပွင့်မည့် ခလုတ်အသစ် */}
+        <div className="date-btn" style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
           <Calendar size={15} />
-          {displayDateFormatted}
-        </button>
+          <span>{displayDateFormatted}</span>
+          <input
+            type="date"
+            value={displayDate}
+            onChange={(e) => {
+              if (e.target.value) setDisplayDate(e.target.value);
+            }}
+            style={{ position: 'absolute', opacity: 0, left: 0, top: 0, width: '100%', height: '100%', cursor: 'pointer' }}
+          />
+        </div>
+
         <div className="toggle-group">
           <button
             className={`toggle-btn${displaySession === 'morning' ? ' active' : ''}`}
@@ -280,7 +277,7 @@ export default function CustomerList() {
         </div>
       </div>
 
-      {/* Mode Toggle (Approved vs Pending) */}
+      {/* Mode Toggle (Pending ကိုလည်း btn-primary သုံးပေးထားသည်) */}
       <div style={{ marginBottom: '16px', display: 'flex', gap: '8px' }}>
         <button
           className={`btn ${viewMode === 'approved' ? 'btn-primary' : 'btn-secondary'}`}
@@ -291,7 +288,7 @@ export default function CustomerList() {
           Approved ({customers.length})
         </button>
         <button
-          className={`btn ${viewMode === 'pending' ? 'btn-warning' : 'btn-secondary'}`}
+          className={`btn ${viewMode === 'pending' ? 'btn-primary' : 'btn-secondary'}`}
           style={{ flex: 1, position: 'relative' }}
           onClick={() => setViewMode('pending')}
         >
@@ -311,6 +308,19 @@ export default function CustomerList() {
 
       {viewMode === 'approved' && (
         <>
+          {/* Search Bar */}
+          <div style={{ marginBottom: '16px', position: 'relative' }}>
+            <Search size={18} style={{ position: 'absolute', left: '12px', top: '11px', color: 'var(--text-muted)' }} />
+            <input
+              type="text"
+              className="form-input"
+              style={{ paddingLeft: '38px' }}
+              placeholder="Search customer name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+
           <div className="stats-grid">
             <div className="stat-card">
               <div className="stat-label">{t('customers.totalCustomers')}</div>
@@ -340,17 +350,17 @@ export default function CustomerList() {
             {t('customers.addNew')}
           </button>
 
-          {customers.length === 0 ? (
+          {filteredCustomers.length === 0 ? (
             <div className="empty-state">
               <div className="empty-state-icon">
                 <Users />
               </div>
-              <h3>{t('customers.noCust')}</h3>
-              <p>{t('customers.addFirst')}</p>
+              <h3>{searchTerm ? 'No results found' : t('customers.noCust')}</h3>
+              <p>{searchTerm ? 'Try a different name' : t('customers.addFirst')}</p>
             </div>
           ) : (
             <div>
-              {customers.map((customer) => {
+              {filteredCustomers.map((customer) => {
                 const bettingArray = Array.isArray(customer.bettingData)
                   ? customer.bettingData
                   : Object.values(customer.bettingData || {}).flat();
@@ -380,15 +390,20 @@ export default function CustomerList() {
                           </span>
                         </div>
                       </div>
-                      <div className="customer-card-actions">
-                        <button className="btn-icon" onClick={() => handleEditCustomer(customer)}>
-                          <Edit2 size={16} />
-                        </button>
-                        <button className="btn-icon" onClick={() => openDeleteSheet(customer.id)} style={{ color: 'var(--danger)' }}>
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+                      
+                      {/* API မှလာသော ဒေတာဖြစ်ပါက Edit နှင့် Delete ကို ဖျောက်ထားသည် */}
+                      {!isFromApi && (
+                        <div className="customer-card-actions">
+                          <button className="btn-icon" onClick={() => handleEditCustomer(customer)}>
+                            <Edit2 size={16} />
+                          </button>
+                          <button className="btn-icon" onClick={() => openDeleteSheet(customer.id)} style={{ color: 'var(--danger)' }}>
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      )}
                     </div>
+                    
                     <div className="customer-card-body">
                       <div className="bet-entries">
                         {(bettingArray as any[]).slice(0, 12).map((bet: any, idx: number) => (
@@ -415,7 +430,6 @@ export default function CustomerList() {
         </>
       )}
 
-      {/* Render Pending View */}
       {viewMode === 'pending' && (
         <div>
           {pendingCustomers.length === 0 ? (
@@ -472,11 +486,11 @@ export default function CustomerList() {
                         <span className="bet-total-amount">{formatAmount(customer.totalBet)}</span>
                       </div>
                       
-                      {/* Action Buttons for Admin */}
+                      {/* Approve ခလုတ်ကို အစိမ်းရောင် သတ်မှတ်ထားသည် */}
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button 
-                          className="btn btn-success" 
-                          style={{ flex: 1 }}
+                          className="btn" 
+                          style={{ flex: 1, backgroundColor: '#16a34a', color: 'white', border: 'none' }}
                           onClick={() => handleApproveSubmission(customer.id)}
                         >
                           <CheckCircle size={16} /> Approve
@@ -498,7 +512,7 @@ export default function CustomerList() {
         </div>
       )}
 
-      {/* --- Existing Bottom Sheets (Add/Edit, Date, Delete) Remain Unchanged Below --- */}
+      {/* Add / Edit Form Bottom Sheet */}
       <BottomSheet open={showAddSheet} onClose={() => { setShowAddSheet(false); resetForm(); }} title={editingCustomer ? t('modal.editCustomer') : t('modal.addCustomer')} footer={ <> <button className="btn btn-secondary" onClick={() => { setShowAddSheet(false); resetForm(); }}> {t('modal.cancel')} </button> <button className="btn btn-primary" onClick={handleSaveCustomer}> {editingCustomer ? t('modal.updateButton') : t('modal.addButton')} </button> </> }>
         <div className="form-group"><label className="form-label">{t('modal.customerName')}</label><input className="form-input" type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Ko Aung" autoFocus /></div>
         <div className="form-group"><label className="form-label">{t('modal.date')}</label><input className="form-input" type="date" value={formDate} onChange={e => setFormDate(e.target.value)} /></div>
@@ -527,17 +541,7 @@ export default function CustomerList() {
         {paymentType === 'credit' && ( <div className="form-group"> <label className="checkbox-row"> <input type="checkbox" className="checkbox-input" checked={weeklySettle} onChange={e => setWeeklySettle(e.target.checked)} id="weekly-settle" /> <span className="checkbox-label">{t('modal.weeklyClear')}</span> </label> </div> )}
       </BottomSheet>
 
-      <BottomSheet open={showDateSheet} onClose={() => setShowDateSheet(false)} title={t('modal.searchByDate')} footer={ <> <button className="btn btn-secondary" onClick={() => setShowDateSheet(false)}> {t('modal.cancel')} </button> <button className="btn btn-primary" onClick={handleDateSelect}> {t('winners.search')} </button> </> }>
-        <div className="form-group"><label className="form-label">{t('modal.date')}</label><input className="form-input" type="date" value={pickerDate} onChange={e => setPickerDate(e.target.value)} /></div>
-        <div className="form-group">
-          <label className="form-label">{t('modal.session')}</label>
-          <div className="toggle-group">
-            <button className={`toggle-btn${pickerSession === 'morning' ? ' active' : ''}`} onClick={() => setPickerSession('morning')}><Sun size={13} /> {t('modal.morning')}</button>
-            <button className={`toggle-btn${pickerSession === 'evening' ? ' active' : ''}`} onClick={() => setPickerSession('evening')}><Moon size={13} /> {t('modal.evening')}</button>
-          </div>
-        </div>
-      </BottomSheet>
-
+      {/* Delete Confirmation Bottom Sheet */}
       <BottomSheet open={showDeleteSheet} onClose={() => setShowDeleteSheet(false)} title="Delete Customer" footer={ <> <button className="btn btn-secondary" onClick={() => setShowDeleteSheet(false)}> {t('modal.cancel')} </button> <button className="btn btn-danger" onClick={handleConfirmDelete}> Delete </button> </> }>
         <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
           <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--danger-bg)', color: 'var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', }}> <Trash2 size={24} /> </div>
