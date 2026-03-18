@@ -6,7 +6,6 @@ import { useToast } from '../contexts/ToastContext';
 import { getCustomersForSession, getSessionKey, type CustomerRecord } from '../lib/customerManager';
 import { formatAmount } from '../lib/bettingParser';
 import BottomSheet from '../components/BottomSheet';
-// API ဒေတာကို ဖတ်ရန်အတွက် အသစ်ထည့်ထားသော Import
 import { useApiSync, mergeCustomers } from '../hooks/useApiSync';
 
 export default function WinnerSearch() {
@@ -24,7 +23,6 @@ export default function WinnerSearch() {
   const [pickerDate, setPickerDate] = useState(displayDate);
   const [pickerSession, setPickerSession] = useState(displaySession);
 
-  // Local Data ကို ဖတ်ခြင်း
   const [localCustomers, setLocalCustomers] = useState<CustomerRecord[]>([]);
   useEffect(() => {
     const [year, month, day] = displayDate.split('-').map(Number);
@@ -33,13 +31,8 @@ export default function WinnerSearch() {
     setLocalCustomers(getCustomersForSession(sk));
   }, [displayDate, displaySession]);
 
-  // Cloudflare API (Customer App) က ဒေတာကို ဖတ်ခြင်း
-  const { remoteCustomers } = useApiSync({
-    date: displayDate,
-    session: displaySession,
-  });
+  const { remoteCustomers } = useApiSync({ date: displayDate, session: displaySession });
 
-  // Local နဲ့ API Data ၂ ခုလုံးကို ပေါင်းလိုက်ခြင်း
   const allCustomers = useMemo(
     () => mergeCustomers(localCustomers, remoteCustomers),
     [localCustomers, remoteCustomers]
@@ -61,18 +54,35 @@ export default function WinnerSearch() {
 
     const winnersList: Array<{ customer: CustomerRecord; amount: number }> = [];
 
-    // ပေါင်းထားသော allCustomers အားလုံးထဲတွင် ရှာဖွေမည်
     allCustomers.forEach((customer) => {
       if (customer.bettingType !== bettingType) return;
 
       const bettingData = Array.isArray(customer.bettingData) ? customer.bettingData : Object.values(customer.bettingData || {}).flat();
 
-      const amount = (bettingData as any[])
-        .filter((entry: any) => String(entry.number) === numStr)
-        .reduce((sum: number, entry: any) => sum + Number(entry.amount), 0);
+      let totalWonAmount = 0;
 
-      if (amount > 0) {
-        winnersList.push({ customer, amount });
+      // 'R' ပါလာခဲ့လျှင် ပြောင်းပြန်ဂဏန်းကိုပါ စစ်ဆေးပေးသည့် အပိုင်း
+      bettingData.forEach((entry: any) => {
+        const enNum = String(entry.number);
+        const enAmtStr = String(entry.amount).toUpperCase();
+        const isReverse = enAmtStr.includes('R');
+        const pureAmount = parseInt(enAmtStr.replace('R', '')) || 0;
+
+        // တိုက်ရိုက် ထိုးထားသော ဂဏန်းနှင့် ကိုက်ညီမှုရှိမရှိ
+        if (enNum === numStr) {
+          totalWonAmount += pureAmount;
+        }
+        // R ပါခဲ့လျှင် ပြောင်းပြန်ဂဏန်းနှင့် ကိုက်ညီမှုရှိမရှိ
+        if (isReverse && enNum.length >= 2) {
+          const revNum = enNum.split('').reverse().join('');
+          if (revNum === numStr && revNum !== enNum) {
+            totalWonAmount += pureAmount;
+          }
+        }
+      });
+
+      if (totalWonAmount > 0) {
+        winnersList.push({ customer, amount: totalWonAmount });
       }
     });
 
