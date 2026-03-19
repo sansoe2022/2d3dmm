@@ -40,7 +40,6 @@ export default function CustomerList() {
 
   const { remoteCustomers, pendingCustomers = [], isLoading: isSyncing, refresh, approveCustomer, rejectCustomer } = useApiSync({ date: displayDate, session: displaySession });
 
-  // Refresh လည်ရန် State
   const [isSpinning, setIsSpinning] = useState(false);
 
   const customers = useMemo(() => mergeCustomers(localCustomers, remoteCustomers), [localCustomers, remoteCustomers]);
@@ -57,7 +56,7 @@ export default function CustomerList() {
   const handleManualRefresh = async () => {
     setIsSpinning(true);
     await refresh();
-    setTimeout(() => setIsSpinning(false), 2000); // ၂ စက္ကန့် အဝိုင်းလည်မည်
+    setTimeout(() => setIsSpinning(false), 2000);
   };
 
   const resetForm = () => {
@@ -104,16 +103,9 @@ export default function CustomerList() {
   };
 
   const handleApproveSubmission = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Event မထပ်စေရန်
-    try {
-      if (approveCustomer) { 
-        await approveCustomer(id); 
-        showToast('Customer Approved', 'success'); 
-        await refresh(); 
-      }
-    } catch (err: any) {
-      showToast('Approve Error: API ချိတ်ဆက်မှု စစ်ဆေးပါ', 'error');
-    }
+    e.stopPropagation(); 
+    try { if (approveCustomer) { await approveCustomer(id); showToast('Customer Approved', 'success'); await refresh(); } } 
+    catch (err: any) { showToast('Approve Error: API ချိတ်ဆက်မှု စစ်ဆေးပါ', 'error'); }
   };
 
   const openRejectModal = (id: string, e: React.MouseEvent) => {
@@ -124,23 +116,19 @@ export default function CustomerList() {
   const handleConfirmReject = async () => {
     try {
       if (rejectingId && rejectCustomer) {
-        await rejectCustomer(rejectingId, rejectReason);
-        showToast('Customer Rejected', 'success');
-        await refresh();
-        setShowRejectModal(false);
+        await rejectCustomer(rejectingId, rejectReason); showToast('Customer Rejected', 'success'); await refresh(); setShowRejectModal(false);
       }
-    } catch (err: any) {
-      showToast('Reject Error: API ချိတ်ဆက်မှု စစ်ဆေးပါ', 'error');
-    }
+    } catch (err: any) { showToast('Reject Error: API ချိတ်ဆက်မှု စစ်ဆေးပါ', 'error'); }
   };
 
+  // ဤနေရာတွင် customers အစား filteredCustomers ကိုသုံး၍ တွက်ချက်ထားပါသည် (Search ချိန်တွင် အလိုအလျောက် ပြောင်းလဲစေရန်)
   const stats = useMemo(() => {
     return {
-      cash: customers.filter(c => c.paymentType === 'cash').length,
-      credit: customers.filter(c => c.paymentType === 'credit').length,
-      total: customers.reduce((sum, c) => sum + c.totalBet, 0)
+      cash: filteredCustomers.filter(c => c.paymentType === 'cash').length,
+      credit: filteredCustomers.filter(c => c.paymentType === 'credit').length,
+      total: filteredCustomers.reduce((sum, c) => sum + c.totalBet, 0)
     };
-  }, [customers]);
+  }, [filteredCustomers]);
 
   const displayDateFormatted = (() => {
     const [year, month, day] = displayDate.split('-').map(Number);
@@ -149,21 +137,11 @@ export default function CustomerList() {
 
   return (
     <>
-      {/* Animation အတွက် CSS အသစ် */}
-      <style>{`
-        .spin-anim { animation: spin 1s linear infinite; }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-      `}</style>
-
+      <style>{`.spin-anim { animation: spin 1s linear infinite; } @keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <h1 className="page-title">{t('customers.title')}</h1>
-            <p className="page-subtitle">{t('customers.description')}</p>
-          </div>
-          <button className="btn btn-secondary" onClick={handleManualRefresh} style={{ padding: '8px 12px', width: 'auto' }}>
-            <RefreshCw size={18} className={isSpinning ? 'spin-anim' : ''} />
-          </button>
+          <div><h1 className="page-title">{t('customers.title')}</h1><p className="page-subtitle">{t('customers.description')}</p></div>
+          <button className="btn btn-secondary" onClick={handleManualRefresh} style={{ padding: '8px 12px', width: 'auto' }}><RefreshCw size={18} className={isSpinning ? 'spin-anim' : ''} /></button>
         </div>
       </div>
 
@@ -179,17 +157,8 @@ export default function CustomerList() {
       </div>
 
       <div style={{ marginBottom: '16px', display: 'flex', gap: '8px' }}>
-        <button className={`btn ${viewMode === 'approved' ? 'btn-primary' : 'btn-secondary'}`} style={{ flex: 1 }} onClick={() => setViewMode('approved')}>
-          <Users size={16} style={{ marginRight: 6 }} /> Approved ({customers.length})
-        </button>
-        <button className={`btn ${viewMode === 'pending' ? 'btn-primary' : 'btn-secondary'}`} style={{ flex: 1, position: 'relative' }} onClick={() => setViewMode('pending')}>
-          <Clock size={16} style={{ marginRight: 6 }} /> Pending 
-          {pendingCustomers.length > 0 && (
-            <span style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'var(--danger)', color: '#fff', borderRadius: '50%', padding: '2px 6px', fontSize: '10px', fontWeight: 'bold' }}>
-              {pendingCustomers.length}
-            </span>
-          )}
-        </button>
+        <button className={`btn ${viewMode === 'approved' ? 'btn-primary' : 'btn-secondary'}`} style={{ flex: 1 }} onClick={() => setViewMode('approved')}><Users size={16} style={{ marginRight: 6 }} /> Approved ({customers.length})</button>
+        <button className={`btn ${viewMode === 'pending' ? 'btn-primary' : 'btn-secondary'}`} style={{ flex: 1, position: 'relative' }} onClick={() => setViewMode('pending')}><Clock size={16} style={{ marginRight: 6 }} /> Pending {pendingCustomers.length > 0 && (<span style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'var(--danger)', color: '#fff', borderRadius: '50%', padding: '2px 6px', fontSize: '10px', fontWeight: 'bold' }}>{pendingCustomers.length}</span>)}</button>
       </div>
 
       {viewMode === 'approved' && (
@@ -200,17 +169,14 @@ export default function CustomerList() {
           </div>
 
           <div className="stats-grid">
-            <div className="stat-card"><div className="stat-label">{t('customers.totalCustomers')}</div><div className="stat-value">{customers.length}</div></div>
-            <div className="stat-card"><div className="stat-label">{t('customers.totalBets')}</div><div className="stat-value" style={{ fontSize: customers.length > 0 ? '18px' : '22px' }}>{formatAmount(stats.total)}</div></div>
+            <div className="stat-card"><div className="stat-label">{t('customers.totalCustomers')}</div><div className="stat-value">{filteredCustomers.length}</div></div>
+            <div className="stat-card"><div className="stat-label">{t('customers.totalBets')}</div><div className="stat-value" style={{ fontSize: filteredCustomers.length > 0 ? '18px' : '22px' }}>{formatAmount(stats.total)}</div></div>
           </div>
 
           <button className="btn btn-primary btn-full btn-lg mb-4" onClick={() => { resetForm(); setShowAddSheet(true); }}><Plus size={18} /> {t('customers.addNew')}</button>
 
           {filteredCustomers.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-state-icon"><Users /></div>
-              <h3>{searchTerm ? 'No results found' : t('customers.noCust')}</h3>
-            </div>
+            <div className="empty-state"><div className="empty-state-icon"><Users /></div><h3>{searchTerm ? 'No results found' : t('customers.noCust')}</h3></div>
           ) : (
             <div>
               {filteredCustomers.map((customer) => {
@@ -221,10 +187,7 @@ export default function CustomerList() {
                     <div className="customer-card-header">
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="customer-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{customer.name} {isFromApi && <span className="badge badge-success"><CheckCircle size={9} /> App</span>}</div>
-                        <div className="customer-meta">
-                          <span className={`badge badge-${customer.bettingType === '2D' ? 'accent' : 'info'}`}><Hash size={9} /> {customer.bettingType}</span>
-                          <span className="badge badge-muted">{customer.session === 'morning' ? <Sun size={9} /> : <Moon size={9} />} {customer.session === 'morning' ? t('modal.morning') : t('modal.evening')}</span>
-                        </div>
+                        <div className="customer-meta"><span className={`badge badge-${customer.bettingType === '2D' ? 'accent' : 'info'}`}><Hash size={9} /> {customer.bettingType}</span><span className="badge badge-muted">{customer.session === 'morning' ? <Sun size={9} /> : <Moon size={9} />} {customer.session === 'morning' ? t('modal.morning') : t('modal.evening')}</span></div>
                       </div>
                       {!isFromApi && (
                         <div className="customer-card-actions">
@@ -265,10 +228,7 @@ export default function CustomerList() {
                     <div className="customer-card-header">
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="customer-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{customer.name} <span className="badge badge-warning">Pending</span></div>
-                        <div className="customer-meta">
-                          <span className={`badge badge-${customer.bettingType === '2D' ? 'accent' : 'info'}`}><Hash size={9} /> {customer.bettingType}</span>
-                          <span className="badge badge-muted">{customer.session === 'morning' ? <Sun size={9} /> : <Moon size={9} />} {customer.session === 'morning' ? t('modal.morning') : t('modal.evening')}</span>
-                        </div>
+                        <div className="customer-meta"><span className={`badge badge-${customer.bettingType === '2D' ? 'accent' : 'info'}`}><Hash size={9} /> {customer.bettingType}</span><span className="badge badge-muted">{customer.session === 'morning' ? <Sun size={9} /> : <Moon size={9} />} {customer.session === 'morning' ? t('modal.morning') : t('modal.evening')}</span></div>
                       </div>
                     </div>
                     <div className="customer-card-body">
@@ -291,12 +251,8 @@ export default function CustomerList() {
       )}
 
       <BottomSheet open={showRejectModal} onClose={() => setShowRejectModal(false)} title="Reject Customer" footer={<><button className="btn btn-secondary" onClick={() => setShowRejectModal(false)}>{t('modal.cancel')}</button><button className="btn btn-danger" onClick={handleConfirmReject}>Confirm Reject</button></>}>
-        <div className="form-group">
-          <label className="form-label">အကြောင်းပြချက် (Reason)</label>
-          <textarea className="form-textarea" rows={3} value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="ဥပမာ - အချိန်ကျော်သွားပါပြီ (သို့) ဂဏန်းမှားယွင်းနေပါသည်" />
-        </div>
+        <div className="form-group"><label className="form-label">အကြောင်းပြချက် (Reason)</label><textarea className="form-textarea" rows={3} value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="ဥပမာ - အချိန်ကျော်သွားပါပြီ (သို့) ဂဏန်းမှားယွင်းနေပါသည်" /></div>
       </BottomSheet>
-
       <BottomSheet open={showAddSheet} onClose={() => { setShowAddSheet(false); resetForm(); }} title={editingCustomer ? t('modal.editCustomer') : t('modal.addCustomer')} footer={ <> <button className="btn btn-secondary" onClick={() => { setShowAddSheet(false); resetForm(); }}> {t('modal.cancel')} </button> <button className="btn btn-primary" onClick={handleSaveCustomer}> {editingCustomer ? t('modal.updateButton') : t('modal.addButton')} </button> </> }>
         <div className="form-group"><label className="form-label">{t('modal.customerName')}</label><input className="form-input" type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Ko Aung" autoFocus /></div>
         <div className="form-group"><label className="form-label">{t('modal.date')}</label><input className="form-input" type="date" value={formDate} onChange={e => setFormDate(e.target.value)} /></div>
@@ -304,10 +260,7 @@ export default function CustomerList() {
         <div className="form-group"><label className="form-label">{t('modal.bettingType')}</label><div className="toggle-group"><button className={`toggle-btn${bettingType === '2D' ? ' active' : ''}`} onClick={() => setBettingType('2D')}>2D</button><button className={`toggle-btn${bettingType === '3D' ? ' active' : ''}`} onClick={() => setBettingType('3D')}>3D</button></div></div>
         <div className="form-group"><label className="form-label">{t('modal.bettingData')}</label><textarea className="form-textarea" value={bettingData} onChange={e => setBettingData(e.target.value)} placeholder="12 500" rows={5} /></div>
       </BottomSheet>
-
-      <BottomSheet open={showDeleteSheet} onClose={() => setShowDeleteSheet(false)} title="Delete Customer" footer={ <> <button className="btn btn-secondary" onClick={() => setShowDeleteSheet(false)}> {t('modal.cancel')} </button> <button className="btn btn-danger" onClick={handleConfirmDelete}> Delete </button> </> }>
-        <div style={{ textAlign: 'center', padding: '8px 0 16px' }}><p>Delete this customer?</p></div>
-      </BottomSheet>
+      <BottomSheet open={showDeleteSheet} onClose={() => setShowDeleteSheet(false)} title="Delete Customer" footer={ <> <button className="btn btn-secondary" onClick={() => setShowDeleteSheet(false)}> {t('modal.cancel')} </button> <button className="btn btn-danger" onClick={handleConfirmDelete}> Delete </button> </> }><div style={{ textAlign: 'center', padding: '8px 0 16px' }}><p>Delete this customer?</p></div></BottomSheet>
     </>
   );
 }
