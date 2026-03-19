@@ -121,7 +121,6 @@ export default function CustomerList() {
     } catch (err: any) { showToast('Reject Error: API ချိတ်ဆက်မှု စစ်ဆေးပါ', 'error'); }
   };
 
-  // ဤနေရာတွင် customers အစား filteredCustomers ကိုသုံး၍ တွက်ချက်ထားပါသည် (Search ချိန်တွင် အလိုအလျောက် ပြောင်းလဲစေရန်)
   const stats = useMemo(() => {
     return {
       cash: filteredCustomers.filter(c => c.paymentType === 'cash').length,
@@ -253,8 +252,20 @@ export default function CustomerList() {
       <BottomSheet open={showRejectModal} onClose={() => setShowRejectModal(false)} title="Reject Customer" footer={<><button className="btn btn-secondary" onClick={() => setShowRejectModal(false)}>{t('modal.cancel')}</button><button className="btn btn-danger" onClick={handleConfirmReject}>Confirm Reject</button></>}>
         <div className="form-group"><label className="form-label">အကြောင်းပြချက် (Reason)</label><textarea className="form-textarea" rows={3} value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="ဥပမာ - အချိန်ကျော်သွားပါပြီ (သို့) ဂဏန်းမှားယွင်းနေပါသည်" /></div>
       </BottomSheet>
+      
+      {/* ဤနေရာတွင် Add/Edit Customer အတွက် Name နှင့် Payment Type (Cash/Credit) ကို သေချာ ထည့်ပေးထားပါသည် */}
       <BottomSheet open={showAddSheet} onClose={() => { setShowAddSheet(false); resetForm(); }} title={editingCustomer ? t('modal.editCustomer') : t('modal.addCustomer')} footer={ <> <button className="btn btn-secondary" onClick={() => { setShowAddSheet(false); resetForm(); }}> {t('modal.cancel')} </button> <button className="btn btn-primary" onClick={handleSaveCustomer}> {editingCustomer ? t('modal.updateButton') : t('modal.addButton')} </button> </> }>
-        <div className="form-group"><label className="form-label">{t('modal.customerName')}</label><input className="form-input" type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Ko Aung" autoFocus /></div>
+        <div className="form-group">
+          <label className="form-label">{t('modal.customerName')}</label>
+          <input className="form-input" type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Ko Aung" autoFocus />
+        </div>
+        <div className="form-group">
+          <label className="form-label">{t('modal.paymentType')}</label>
+          <div className="toggle-group">
+            <button className={`toggle-btn${paymentType === 'cash' ? ' active' : ''}`} onClick={() => setPaymentType('cash')}><Banknote size={13} /> {t('modal.cash')}</button>
+            <button className={`toggle-btn${paymentType === 'credit' ? ' active' : ''}`} onClick={() => setPaymentType('credit')}><CreditCard size={13} /> {t('modal.credit')}</button>
+          </div>
+        </div>
         <div className="form-group"><label className="form-label">{t('modal.date')}</label><input className="form-input" type="date" value={formDate} onChange={e => setFormDate(e.target.value)} /></div>
         <div className="form-group"><label className="form-label">{t('modal.session')}</label><div className="toggle-group"><button className={`toggle-btn${formSession === 'morning' ? ' active' : ''}`} onClick={() => setFormSession('morning')}><Sun size={13} /> {t('modal.morning')}</button><button className={`toggle-btn${formSession === 'evening' ? ' active' : ''}`} onClick={() => setFormSession('evening')}><Moon size={13} /> {t('modal.evening')}</button></div></div>
         <div className="form-group"><label className="form-label">{t('modal.bettingType')}</label><div className="toggle-group"><button className={`toggle-btn${bettingType === '2D' ? ' active' : ''}`} onClick={() => setBettingType('2D')}>2D</button><button className={`toggle-btn${bettingType === '3D' ? ' active' : ''}`} onClick={() => setBettingType('3D')}>3D</button></div></div>
