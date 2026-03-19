@@ -16,6 +16,7 @@ export interface ApiCustomerRow {
   session: 'morning' | 'evening';
   bet_date: string;
   status: 'pending' | 'approved' | 'rejected';
+  reason?: string; // Reject အကြောင်းပြချက်အတွက် အသစ်ထည့်ထားသည်
 }
 
 interface UseApiSyncOptions {
@@ -32,7 +33,7 @@ interface UseApiSyncResult {
   apiAvailable: boolean;
   refresh: () => Promise<void>;
   approveCustomer: (id: string) => Promise<void>;
-  rejectCustomer: (id: string) => Promise<void>;
+  rejectCustomer: (id: string, reason: string) => Promise<void>; // Reason ကို လက်ခံရန် ပြင်ဆင်ထားသည်
 }
 
 export function useApiSync({ date, session, enabled = true }: UseApiSyncOptions): UseApiSyncResult {
@@ -63,7 +64,6 @@ export function useApiSync({ date, session, enabled = true }: UseApiSyncOptions)
           ? JSON.parse(item.betting_data) 
           : item.betting_data;
 
-        // **ဒီနေရာက အသစ်ထည့်ထားတဲ့ Data ပြုပြင်သည့် အပိုင်းဖြစ်ပါတယ်**
         const formattedBets: any[] = [];
         parsedBettingData.forEach((bet: any) => {
           const numStr = String(bet.number);
@@ -72,13 +72,10 @@ export function useApiSync({ date, session, enabled = true }: UseApiSyncOptions)
           const pureAmount = parseInt(amtStr.replace('R', '')) || 0;
 
           if (pureAmount > 0) {
-            // မူလဂဏန်းကို ထည့်သည်
             formattedBets.push({ number: numStr, amount: pureAmount });
-            
-            // R ပါခဲ့လျှင် ပြောင်းပြန်ဂဏန်းကိုပါ ထပ်ထည့်ပေးသည်
             if (isReverse && numStr.length >= 2) {
               const reversedNum = numStr.split('').reverse().join('');
-              if (reversedNum !== numStr) { // ဥပမာ - 11 လိုဂဏန်းမျိုးဆို ၂ ခါ မထည့်အောင် စစ်တာပါ
+              if (reversedNum !== numStr) {
                 formattedBets.push({ number: reversedNum, amount: pureAmount });
               }
             }
@@ -88,7 +85,7 @@ export function useApiSync({ date, session, enabled = true }: UseApiSyncOptions)
         const record: CustomerRecord = {
           id: item.id,
           name: item.customer_name,         
-          bettingData: formattedBets, // ပြင်ဆင်ပြီးသား Data ကို အသုံးပြုသည်
+          bettingData: formattedBets,
           paymentType: 'cash',              
           weeklySettle: false,
           bettingType: item.betting_type,
@@ -96,7 +93,8 @@ export function useApiSync({ date, session, enabled = true }: UseApiSyncOptions)
           session: item.session,
           totalBet: item.total_amount,      
           source: 'api', 
-        };
+          rejectReason: item.reason // Reason ကိုပါ ဖတ်ယူမည်
+        } as CustomerRecord;
 
         if (item.status === 'pending') {
           pending.push(record);
@@ -125,12 +123,16 @@ export function useApiSync({ date, session, enabled = true }: UseApiSyncOptions)
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [fetchRemote, enabled]);
 
-  const updateStatus = async (id: string, status: 'approved' | 'rejected') => {
+  // Status နဲ့ Reason ကို တွဲပို့ပေးမည်
+  const updateStatus = async (id: string, status: 'approved' | 'rejected', reason?: string) => {
     try {
+      const payload: any = { status };
+      if (reason) payload.reason = reason;
+
       const response = await fetch(`${API_BASE_URL}/api/admin/submissions/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error(`Failed to ${status} customer`);
       await fetchRemote();
@@ -144,7 +146,7 @@ export function useApiSync({ date, session, enabled = true }: UseApiSyncOptions)
     remoteCustomers, pendingCustomers, isLoading, lastSynced,
     apiAvailable, refresh: fetchRemote,
     approveCustomer: (id: string) => updateStatus(id, 'approved'),
-    rejectCustomer: (id: string) => updateStatus(id, 'rejected')
+    rejectCustomer: (id: string, reason: string) => updateStatus(id, 'rejected', reason)
   };
 }
 
