@@ -31,6 +31,12 @@ export default function CustomerList() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<CustomerRecord | null>(null);
 
+ // Reject လုပ်ရန် State များ
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  
   const [viewMode, setViewMode] = useState<'approved' | 'pending'>('approved');
   
   // Search State
@@ -241,6 +247,10 @@ export default function CustomerList() {
             <h1 className="page-title">{t('customers.title')}</h1>
             <p className="page-subtitle">{t('customers.description')}</p>
           </div>
+          <button className="btn btn-secondary" onClick={refresh} style={{ padding: '8px 12px', width: 'auto' }}>
+            <RefreshCw size={18} />
+          </button>
+
         </div>
       </div>
 
@@ -512,6 +522,14 @@ export default function CustomerList() {
         </div>
       )}
 
+<BottomSheet open={showRejectModal} onClose={() => setShowRejectModal(false)} title="Reject Customer" footer={<><button className="btn btn-secondary" onClick={() => setShowRejectModal(false)}>{t('modal.cancel')}</button><button className="btn btn-danger" onClick={handleConfirmReject}>Confirm Reject</button></>}>
+        <div className="form-group">
+          <label className="form-label">အကြောင်းပြချက် (Reason)</label>
+          <textarea className="form-textarea" rows={3} value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="ဥပမာ - အချိန်ကျော်သွားပါပြီ (သို့) ဂဏန်းမှားယွင်းနေပါသည်" />
+        </div>
+      </BottomSheet>
+
+      
       {/* Add / Edit Form Bottom Sheet */}
       <BottomSheet open={showAddSheet} onClose={() => { setShowAddSheet(false); resetForm(); }} title={editingCustomer ? t('modal.editCustomer') : t('modal.addCustomer')} footer={ <> <button className="btn btn-secondary" onClick={() => { setShowAddSheet(false); resetForm(); }}> {t('modal.cancel')} </button> <button className="btn btn-primary" onClick={handleSaveCustomer}> {editingCustomer ? t('modal.updateButton') : t('modal.addButton')} </button> </> }>
         <div className="form-group"><label className="form-label">{t('modal.customerName')}</label><input className="form-input" type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Ko Aung" autoFocus /></div>
