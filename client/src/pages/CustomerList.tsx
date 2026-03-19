@@ -1,16 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import {
-  Plus, Edit2, Trash2, Calendar, Sun, Moon, Users,
-  Banknote, CreditCard, RefreshCw, Hash,
-  Clock, CheckCircle, XCircle, Search
-} from 'lucide-react';
+import { Plus, Edit2, Trash2, Calendar, Sun, Moon, Users, Banknote, CreditCard, RefreshCw, Hash, Clock, CheckCircle, XCircle, Search } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useSession } from '../contexts/SessionContext';
 import { useToast } from '../contexts/ToastContext';
-import {
-  getCustomersForSession, deleteCustomerFromSession, getSessionKey,
-  addCustomer, updateCustomerInSession, type CustomerRecord,
-} from '../lib/customerManager';
+import { getCustomersForSession, deleteCustomerFromSession, getSessionKey, addCustomer, updateCustomerInSession, type CustomerRecord } from '../lib/customerManager';
 import { formatAmount, parseBettingText } from '../lib/bettingParser';
 import { deleteCustomerFromApi } from '../lib/apiClient';
 import { useApiSync, mergeCustomers } from '../hooks/useApiSync';
@@ -21,26 +14,22 @@ export default function CustomerList() {
   const { date, session } = useSession();
   const { showToast } = useToast();
 
-  // Basic States
   const [localCustomers, setLocalCustomers] = useState<CustomerRecord[]>([]);
   const [showAddSheet, setShowAddSheet] = useState(false);
   const [showDeleteSheet, setShowDeleteSheet] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<CustomerRecord | null>(null);
 
-  // Reject Modal States (ဒီကောင်လေး ပျောက်သွားလို့ Error တက်တာပါ)
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
-  // UI States
   const [viewMode, setViewMode] = useState<'approved' | 'pending'>('approved');
   const [searchTerm, setSearchTerm] = useState('');
 
   const [displayDate, setDisplayDate] = useState(date.toISOString().split('T')[0]);
   const [displaySession, setDisplaySession] = useState<'morning' | 'evening'>(session);
 
-  // Form States
   const [name, setName] = useState('');
   const [bettingData, setBettingData] = useState('');
   const [paymentType, setPaymentType] = useState<'cash' | 'credit'>('cash');
@@ -49,10 +38,11 @@ export default function CustomerList() {
   const [formDate, setFormDate] = useState(new Date().toISOString().split('T')[0]);
   const [formSession, setFormSession] = useState<'morning' | 'evening'>(() => new Date().getHours() < 12 ? 'morning' : 'evening');
 
-  // API Hook
   const { remoteCustomers, pendingCustomers = [], isLoading: isSyncing, refresh, approveCustomer, rejectCustomer } = useApiSync({ date: displayDate, session: displaySession });
 
-  // Data Merging & Filtering
+  // Refresh လည်ရန် State
+  const [isSpinning, setIsSpinning] = useState(false);
+
   const customers = useMemo(() => mergeCustomers(localCustomers, remoteCustomers), [localCustomers, remoteCustomers]);
   const filteredCustomers = useMemo(() => customers.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())), [customers, searchTerm]);
 
@@ -64,6 +54,12 @@ export default function CustomerList() {
     setLocalCustomers(getCustomersForSession(getSessionKey(dateObj, displaySession)));
   };
 
+  const handleManualRefresh = async () => {
+    setIsSpinning(true);
+    await refresh();
+    setTimeout(() => setIsSpinning(false), 2000); // ၂ စက္ကန့် အဝိုင်းလည်မည်
+  };
+
   const resetForm = () => {
     setName(''); setBettingData(''); setPaymentType('cash'); setWeeklySettle(false); setBettingType('2D'); setEditingCustomer(null);
   };
@@ -71,11 +67,9 @@ export default function CustomerList() {
   const handleSaveCustomer = () => {
     if (!name.trim()) { showToast(t('modal.customerName') + ' required', 'error'); return; }
     if (!bettingData.trim()) { showToast(t('modal.bettingData') + ' required', 'error'); return; }
-
     try {
       const parsed = parseBettingText(bettingData, bettingType);
       if (parsed.entries.length === 0) { showToast('No valid bets found', 'error'); return; }
-
       const now = new Date();
       const [year, month, day] = formDate.split('-').map(Number);
       const customerDate = new Date(year, month - 1, day, now.getHours(), now.getMinutes(), 0, 0);
@@ -95,65 +89,48 @@ export default function CustomerList() {
 
       resetForm(); setShowAddSheet(false); setTimeout(() => loadLocalCustomers(), 100);
       showToast(editingCustomer ? 'Customer updated' : 'Customer added', 'success');
-    } catch {
-      showToast('Error parsing betting data', 'error');
-    }
-  };
-
-  const openDeleteSheet = (id: string) => {
-    setDeletingId(id);
-    setShowDeleteSheet(true);
+    } catch { showToast('Error parsing data', 'error'); }
   };
 
   const handleConfirmDelete = async () => {
     if (!deletingId) return;
     const c = customers.find(x => x.id === deletingId);
     const [year, month, day] = displayDate.split('-').map(Number);
-    const dateObj = new Date(year, month - 1, day, 0, 0, 0, 0);
-    const currentSessionKey = getSessionKey(dateObj, displaySession);
-    
+    const currentSessionKey = getSessionKey(new Date(year, month - 1, day, 0, 0, 0, 0), displaySession);
     const deletedLocal = deleteCustomerFromSession(deletingId, currentSessionKey);
     if (c?.source === 'api') await deleteCustomerFromApi(deletingId, displayDate, displaySession);
-    
-    if (deletedLocal || c?.source === 'api') { 
-      showToast('Customer deleted', 'success'); 
-      loadLocalCustomers(); 
-      await refresh(); 
-    }
-    setDeletingId(null); 
-    setShowDeleteSheet(false);
+    if (deletedLocal || c?.source === 'api') { showToast('Customer deleted', 'success'); loadLocalCustomers(); await refresh(); }
+    setDeletingId(null); setShowDeleteSheet(false);
   };
 
-  const handleEditCustomer = (c: CustomerRecord) => {
-    setEditingCustomer(c); setName(c.name); setPaymentType(c.paymentType); setWeeklySettle(c.weeklySettle || false); setBettingType(c.bettingType);
-    setFormDate(new Date(c.date).toISOString().split('T')[0]); setFormSession(c.session);
-    const bArray = Array.isArray(c.bettingData) ? c.bettingData : Object.values(c.bettingData || {}).flat();
-    setBettingData((bArray as any[]).map((b: any) => `${b.number} ${b.amount}`).join('\n')); 
-    setShowAddSheet(true);
-  };
-
-  const handleApproveSubmission = async (id: string) => {
-    if (approveCustomer) { 
-      await approveCustomer(id); 
-      showToast('Customer Approved', 'success'); 
-      await refresh(); 
+  const handleApproveSubmission = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Event မထပ်စေရန်
+    try {
+      if (approveCustomer) { 
+        await approveCustomer(id); 
+        showToast('Customer Approved', 'success'); 
+        await refresh(); 
+      }
+    } catch (err: any) {
+      showToast('Approve Error: API ချိတ်ဆက်မှု စစ်ဆေးပါ', 'error');
     }
   };
 
-  // Reject Modal ကို ဖွင့်သည့် Function
-  const openRejectModal = (id: string) => {
-    setRejectingId(id);
-    setRejectReason('');
-    setShowRejectModal(true);
+  const openRejectModal = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRejectingId(id); setRejectReason(''); setShowRejectModal(true);
   };
 
-  // Reject ကို အတည်ပြုသည့် Function (ဒီကောင်ပါ)
   const handleConfirmReject = async () => {
-    if (rejectingId && rejectCustomer) {
-      await rejectCustomer(rejectingId, rejectReason);
-      showToast('Customer Rejected', 'success');
-      await refresh();
-      setShowRejectModal(false);
+    try {
+      if (rejectingId && rejectCustomer) {
+        await rejectCustomer(rejectingId, rejectReason);
+        showToast('Customer Rejected', 'success');
+        await refresh();
+        setShowRejectModal(false);
+      }
+    } catch (err: any) {
+      showToast('Reject Error: API ချိတ်ဆက်မှု စစ်ဆေးပါ', 'error');
     }
   };
 
@@ -167,23 +144,25 @@ export default function CustomerList() {
 
   const displayDateFormatted = (() => {
     const [year, month, day] = displayDate.split('-').map(Number);
-    const dateObj = new Date(year, month - 1, day, 0, 0, 0, 0);
-    return dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return new Date(year, month - 1, day, 0, 0, 0, 0).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   })();
-
-  const deletingCustomer = customers.find(c => c.id === deletingId);
-  const bettingPlaceholder = bettingType === '2D' ? '12 500\n34 1000R\n56 300\n78 200R' : '123 500\n456 1000R\n789 300';
 
   return (
     <>
+      {/* Animation အတွက် CSS အသစ် */}
+      <style>{`
+        .spin-anim { animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+      `}</style>
+
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <h1 className="page-title">{t('customers.title')}</h1>
             <p className="page-subtitle">{t('customers.description')}</p>
           </div>
-          <button className="btn btn-secondary" onClick={refresh} style={{ padding: '8px 12px', width: 'auto' }}>
-            <RefreshCw size={18} className={isSyncing ? 'spin' : ''} />
+          <button className="btn btn-secondary" onClick={handleManualRefresh} style={{ padding: '8px 12px', width: 'auto' }}>
+            <RefreshCw size={18} className={isSpinning ? 'spin-anim' : ''} />
           </button>
         </div>
       </div>
@@ -223,8 +202,6 @@ export default function CustomerList() {
           <div className="stats-grid">
             <div className="stat-card"><div className="stat-label">{t('customers.totalCustomers')}</div><div className="stat-value">{customers.length}</div></div>
             <div className="stat-card"><div className="stat-label">{t('customers.totalBets')}</div><div className="stat-value" style={{ fontSize: customers.length > 0 ? '18px' : '22px' }}>{formatAmount(stats.total)}</div></div>
-            <div className="stat-card"><div className="stat-label">{t('customers.cash')}</div><div className="stat-value success">{stats.cash}</div></div>
-            <div className="stat-card"><div className="stat-label">{t('customers.credit')}</div><div className="stat-value warning">{stats.credit}</div></div>
           </div>
 
           <button className="btn btn-primary btn-full btn-lg mb-4" onClick={() => { resetForm(); setShowAddSheet(true); }}><Plus size={18} /> {t('customers.addNew')}</button>
@@ -233,7 +210,6 @@ export default function CustomerList() {
             <div className="empty-state">
               <div className="empty-state-icon"><Users /></div>
               <h3>{searchTerm ? 'No results found' : t('customers.noCust')}</h3>
-              <p>{searchTerm ? 'Try a different name' : t('customers.addFirst')}</p>
             </div>
           ) : (
             <div>
@@ -244,7 +220,7 @@ export default function CustomerList() {
                   <div key={customer.id} className={`customer-card${isFromApi ? ' api-card' : ''}`}>
                     <div className="customer-card-header">
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div className="customer-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{customer.name} {isFromApi && <span className="badge badge-success" title="Added via Customer App"><CheckCircle size={9} /> App</span>}</div>
+                        <div className="customer-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{customer.name} {isFromApi && <span className="badge badge-success"><CheckCircle size={9} /> App</span>}</div>
                         <div className="customer-meta">
                           <span className={`badge badge-${customer.bettingType === '2D' ? 'accent' : 'info'}`}><Hash size={9} /> {customer.bettingType}</span>
                           <span className="badge badge-muted">{customer.session === 'morning' ? <Sun size={9} /> : <Moon size={9} />} {customer.session === 'morning' ? t('modal.morning') : t('modal.evening')}</span>
@@ -252,8 +228,12 @@ export default function CustomerList() {
                       </div>
                       {!isFromApi && (
                         <div className="customer-card-actions">
-                          <button className="btn-icon" onClick={() => handleEditCustomer(customer)}><Edit2 size={16} /></button>
-                          <button className="btn-icon" onClick={() => openDeleteSheet(customer.id)} style={{ color: 'var(--danger)' }}><Trash2 size={16} /></button>
+                          <button className="btn-icon" onClick={() => {
+                            setEditingCustomer(customer); setName(customer.name); setPaymentType(customer.paymentType); setWeeklySettle(customer.weeklySettle || false); setBettingType(customer.bettingType);
+                            setFormDate(new Date(customer.date).toISOString().split('T')[0]); setFormSession(customer.session);
+                            setBettingData((bettingArray as any[]).map((b: any) => `${b.number} ${b.amount}`).join('\n')); setShowAddSheet(true);
+                          }}><Edit2 size={16} /></button>
+                          <button className="btn-icon" onClick={() => { setDeletingId(customer.id); setShowDeleteSheet(true); }} style={{ color: 'var(--danger)' }}><Trash2 size={16} /></button>
                         </div>
                       )}
                     </div>
@@ -275,7 +255,7 @@ export default function CustomerList() {
       {viewMode === 'pending' && (
         <div>
           {pendingCustomers.length === 0 ? (
-            <div className="empty-state"><div className="empty-state-icon"><Clock /></div><h3>No Pending Approvals</h3><p>Customers haven't submitted new lists yet.</p></div>
+            <div className="empty-state"><div className="empty-state-icon"><Clock /></div><h3>No Pending Approvals</h3></div>
           ) : (
             <div>
               {pendingCustomers.map((customer) => {
@@ -298,8 +278,8 @@ export default function CustomerList() {
                       </div>
                       <div className="bet-total" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', marginBottom: '10px' }}><span className="text-secondary text-sm">Total</span> <span className="bet-total-amount">{formatAmount(customer.totalBet)}</span></div>
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button className="btn" style={{ flex: 1, backgroundColor: '#16a34a', color: 'white', border: 'none' }} onClick={() => handleApproveSubmission(customer.id)}><CheckCircle size={16} /> Approve</button>
-                        <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => openRejectModal(customer.id)}><XCircle size={16} /> Reject</button>
+                        <button type="button" className="btn" style={{ flex: 1, backgroundColor: '#16a34a', color: 'white', border: 'none', zIndex: 10 }} onClick={(e) => handleApproveSubmission(customer.id, e)}><CheckCircle size={16} /> Approve</button>
+                        <button type="button" className="btn btn-danger" style={{ flex: 1, zIndex: 10 }} onClick={(e) => openRejectModal(customer.id, e)}><XCircle size={16} /> Reject</button>
                       </div>
                     </div>
                   </div>
@@ -310,7 +290,6 @@ export default function CustomerList() {
         </div>
       )}
 
-      {/* Reject Reason Bottom Sheet */}
       <BottomSheet open={showRejectModal} onClose={() => setShowRejectModal(false)} title="Reject Customer" footer={<><button className="btn btn-secondary" onClick={() => setShowRejectModal(false)}>{t('modal.cancel')}</button><button className="btn btn-danger" onClick={handleConfirmReject}>Confirm Reject</button></>}>
         <div className="form-group">
           <label className="form-label">အကြောင်းပြချက် (Reason)</label>
@@ -318,23 +297,16 @@ export default function CustomerList() {
         </div>
       </BottomSheet>
 
-      {/* Add/Edit Bottom Sheet */}
       <BottomSheet open={showAddSheet} onClose={() => { setShowAddSheet(false); resetForm(); }} title={editingCustomer ? t('modal.editCustomer') : t('modal.addCustomer')} footer={ <> <button className="btn btn-secondary" onClick={() => { setShowAddSheet(false); resetForm(); }}> {t('modal.cancel')} </button> <button className="btn btn-primary" onClick={handleSaveCustomer}> {editingCustomer ? t('modal.updateButton') : t('modal.addButton')} </button> </> }>
         <div className="form-group"><label className="form-label">{t('modal.customerName')}</label><input className="form-input" type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Ko Aung" autoFocus /></div>
         <div className="form-group"><label className="form-label">{t('modal.date')}</label><input className="form-input" type="date" value={formDate} onChange={e => setFormDate(e.target.value)} /></div>
         <div className="form-group"><label className="form-label">{t('modal.session')}</label><div className="toggle-group"><button className={`toggle-btn${formSession === 'morning' ? ' active' : ''}`} onClick={() => setFormSession('morning')}><Sun size={13} /> {t('modal.morning')}</button><button className={`toggle-btn${formSession === 'evening' ? ' active' : ''}`} onClick={() => setFormSession('evening')}><Moon size={13} /> {t('modal.evening')}</button></div></div>
         <div className="form-group"><label className="form-label">{t('modal.bettingType')}</label><div className="toggle-group"><button className={`toggle-btn${bettingType === '2D' ? ' active' : ''}`} onClick={() => setBettingType('2D')}>2D</button><button className={`toggle-btn${bettingType === '3D' ? ' active' : ''}`} onClick={() => setBettingType('3D')}>3D</button></div></div>
-        <div className="form-group"><label className="form-label">{t('modal.bettingData')}</label><textarea className="form-textarea" value={bettingData} onChange={e => setBettingData(e.target.value)} placeholder={bettingPlaceholder} rows={5} /></div>
-        <div className="form-group"><label className="form-label">{t('modal.paymentType')}</label><div className="toggle-group"><button className={`toggle-btn${paymentType === 'cash' ? ' active' : ''}`} onClick={() => setPaymentType('cash')}><Banknote size={13} /> {t('modal.cash')}</button><button className={`toggle-btn${paymentType === 'credit' ? ' active' : ''}`} onClick={() => setPaymentType('credit')}><CreditCard size={13} /> {t('modal.credit')}</button></div></div>
+        <div className="form-group"><label className="form-label">{t('modal.bettingData')}</label><textarea className="form-textarea" value={bettingData} onChange={e => setBettingData(e.target.value)} placeholder="12 500" rows={5} /></div>
       </BottomSheet>
 
-      {/* Delete Bottom Sheet */}
       <BottomSheet open={showDeleteSheet} onClose={() => setShowDeleteSheet(false)} title="Delete Customer" footer={ <> <button className="btn btn-secondary" onClick={() => setShowDeleteSheet(false)}> {t('modal.cancel')} </button> <button className="btn btn-danger" onClick={handleConfirmDelete}> Delete </button> </> }>
-        <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
-          <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--danger-bg)', color: 'var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', }}> <Trash2 size={24} /> </div>
-          <p style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}> Delete {deletingCustomer?.name || 'this customer'}? </p>
-          <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}> This action cannot be undone. All betting data will be permanently removed. </p>
-        </div>
+        <div style={{ textAlign: 'center', padding: '8px 0 16px' }}><p>Delete this customer?</p></div>
       </BottomSheet>
     </>
   );
